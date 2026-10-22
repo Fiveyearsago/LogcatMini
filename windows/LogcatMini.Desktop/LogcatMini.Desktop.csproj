@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers><RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <AssemblyName>LogcatMini</AssemblyName><Version>0.2.0</Version><Product>Logcat Mini</Product><Description>Android log viewer for Windows</Description>
+    <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport><PublishTrimmed>false</PublishTrimmed><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../LogcatMini.Core/LogcatMini.Core.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Avalonia.Desktop" Version="12.1.4" /><PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" /></ItemGroup>
+  <ItemGroup><Content Include="Assets/AppIcon.ico" Link="AppIcon.ico" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Sources/LogcatMini/Resources/AppMetadata.jar" Link="AppMetadata.jar" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="Recording/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+</Project>

@@ -1,0 +1,19 @@
+name: macOS checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare recording runtime
+        run: bash scripts/prepare-recording-runtime.sh
+      - name: Test
+        run: swift test
+      - name: Build app
+        run: bash scripts/build-app.sh

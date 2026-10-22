@@ -1,0 +1,22 @@
+.build/
+dist/
+.DS_Store
+windows/**/bin/
+windows/**/obj/
+windows/LogcatMini.Desktop/Recording/
+# Local QA evidence and signing material
+docs/qa/*.png
+docs/qa/*.log
+docs/qa/*.txt
+*.jks
+*.keystore
+
+# Downloaded third-party executables (prepare locally before building)
+Sources/LogcatMini/Resources/Recording/scrcpy
+Sources/LogcatMini/Resources/Recording/scrcpy-server
+# Local credentials and editor state
+.env
+.env.*
+*.pem
+*.p12
+*.pfx

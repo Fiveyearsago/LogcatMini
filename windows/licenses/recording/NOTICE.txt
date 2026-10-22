@@ -1,0 +1,11 @@
+Logcat Mini uses the unmodified official scrcpy 5.0.1 win64 release (Apache-2.0).
+https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1
+Source and reproducible release build scripts, including dependency versions/options:
+https://github.com/Genymobile/scrcpy/tree/v5.0.1/release
+
+The dynamically linked FFmpeg, SDL3 and libusb libraries are supplied by that release.
+Their license texts accompany this notice. They are not linked into Logcat Mini.
+Library replacement for debugging modifications is not restricted by Logcat Mini.
+No ADB executable, host key, local settings, device logs or captures are copied.
+
+Windows video preview uses system Media Foundation (mfplay.dll).

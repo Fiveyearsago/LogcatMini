@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "Logcat Mini",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "search.exclude": {
+      "**/.build": true,
+      "**/dist": true,
+      "**/bin": true,
+      "**/obj": true
+    }
+  }
+}

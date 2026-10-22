@@ -1,0 +1,26 @@
+Logcat Mini screen recording runtime
+
+scrcpy 5.0.1, Copyright Genymobile and contributors, Apache-2.0.
+https://github.com/Genymobile/scrcpy/tree/v5.0.1
+https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1
+
+The official macOS arm64 and x86_64 static executables are combined using
+Apple lipo and locally signed, with no source-code modifications. The Android
+server is unchanged. No bundled adb is used: Logcat Mini supplies its chosen ADB.
+Reproduce the runtime using scripts/prepare-recording-runtime.sh in the project.
+
+Official archive SHA-256 checksums:
+arm64  33611e51977a8289e2e124b220f727895181ef2eb9060e0987a4dc2db9cf0d6b
+x86_64 31a5467a9e907f162b093267cbbab1276b15c6e709c2ea8159566a8d165beb50
+
+Upstream static binary dependencies (reported by scrcpy --version):
+SDL 3.4.18 (zlib): https://github.com/libsdl-org/SDL/tree/release-3.4.18
+FFmpeg libavcodec 63.1.102 / libavformat 63.1.102 / libavutil 61.1.102
+(LGPL-2.1-or-later): https://git.ffmpeg.org/ffmpeg.git
+libusb 1.0.30 (LGPL-2.1-or-later): https://github.com/libusb/libusb/tree/v1.0.30
+Licenses are included beside this notice. Upstream build recipes and source
+references: https://github.com/Genymobile/scrcpy/tree/v5.0.1/release
+
+The runtime is a separate executable. Users may replace it with a compatible
+build of scrcpy and its matching Android server; Logcat Mini does not prevent
+modification or reverse engineering of these components.
