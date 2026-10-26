@@ -9,6 +9,7 @@ struct ContentView: View {
     @ObservedObject private var media: DeviceMediaController
     @ObservedObject private var library: MediaLibrary
     @ObservedObject private var mirror: DeviceMirrorController
+    @StateObject private var companion = CatCompanion()
     init(model: LogViewModel, appearance: AppearanceSettings, replay: RequestReplayStore, sDecrypt: LogSDecryptionStore) {
         self.model = model; self.appearance = appearance; self.media = model.media; self.library = model.media.library
         self.replay = replay; self.sDecrypt = sDecrypt; self.mirror = model.mirror
@@ -22,6 +23,7 @@ struct ContentView: View {
     @FocusState private var filterFocus: FilterField?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.scenePhase) private var scenePhase
     private var palette: ThemePalette { appearance.theme.palette(for: colorScheme) }
     var body: some View {
         GeometryReader { window in
@@ -52,7 +54,7 @@ struct ContentView: View {
                                 .frame(height: model.inspectorFullscreen ? 0 : nil).clipped()
                                 .accessibilityHidden(model.inspectorFullscreen)
                             ZStack {
-                                LogTable(entries: model.visible, revision: model.revision, palette: palette, fontSize: appearance.fontSize, visibleColumns: appearance.columns.visibleColumns, filterKey: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.minimum.rawValue)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.regex)", follow: $model.follow, selected: $model.selectedLog, find: model.listFind, activate: { model.activeFindPane = .list })
+                                LogTable(entries: model.visible, revision: model.revision, palette: palette, fontSize: appearance.fontSize, visibleColumns: appearance.columns.visibleColumns, filterKey: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.minimum.rawValue)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.regex)", follow: $model.follow, selected: $model.selectedLog, find: model.listFind, activate: { model.activeFindPane = .list }, didCopy: { meetCat(.copied) })
                                 if model.visible.isEmpty {
                                     VStack(spacing: 13) {
                                         Image(systemName: model.device == nil ? "cable.connector" : "text.alignleft").font(.system(size: appearance.uiSize(32), weight: .light)).foregroundColor(palette.accent)
@@ -69,7 +71,9 @@ struct ContentView: View {
                                 }.frame(height: model.inspectorFullscreen ? 0 : 10).clipped()
                                     .accessibilityHidden(model.inspectorFullscreen).allowsHitTesting(!model.inspectorFullscreen)
                                 LogInspector(entry: entry, palette: palette, appearance: appearance, fullscreen: $model.inspectorFullscreen, find: model.detailFind, activate: { model.activeFindPane = .detail },
-                                             copy: model.copyDetail, close: { model.selectedLog = nil }, simulate: {
+                                             copy: { text in
+                                                 if model.copyDetail(text) { meetCat(.copied) }
+                                             }, close: { model.selectedLog = nil }, simulate: {
                                                  replay.importLog(entry, context: model.requestContext(for: entry))
                                                  openWindow(id: "request-replay")
                                              }, decryptS: {
@@ -79,6 +83,10 @@ struct ContentView: View {
                                     .frame(height: model.inspectorFullscreen ? geometry.size.height : height - 10)
                             }
                         }
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        CatCompanionOverlay(companion: companion, palette: palette)
+                            .padding(18)
                     }
                     if model.mirrorShown && !model.inspectorFullscreen {
                         let limit = max(260, min(560, window.size.width - (model.logFullscreen ? 420 : min(max(240, sidebarWidth), sidebarLimit) + 427)))
@@ -99,6 +107,36 @@ struct ContentView: View {
         .background(palette.canvas)
         .tint(palette.accent)
         }
+        .onDisappear { companion.dismiss() }
+        .onChange(of: model.inspectorFullscreen) { _ in companion.dismiss() }
+        .onChange(of: model.logFullscreen) { _ in companion.dismiss() }
+        .onChange(of: model.completedCaptureCount) { _ in
+            if model.totalCount >= 10 { meetCat(.finishedCapture) }
+        }
+        .task(id: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.minimum.rawValue)\u{0}\(model.regex)") {
+            guard !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    !model.tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            // Wait for typing and the existing filter debounce, without watching log traffic.
+            do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
+            guard !Task.isCancelled, model.totalCount >= 20 else { return }
+            if model.filterError != nil {
+                meetCat(.tangledRegex)
+            } else if model.visible.isEmpty {
+                meetCat(.noMatches)
+            } else if model.visible.count <= model.totalCount / 3 {
+                meetCat(.filtered)
+            }
+        }
+        .task(id: "\(model.paused)\u{0}\(model.running)\u{0}\(model.selectedSerial)\u{0}\(model.selectedPackage)") {
+            guard model.paused, model.running, !model.visible.isEmpty else { return }
+            do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+            guard !Task.isCancelled, model.paused, model.running, !model.visible.isEmpty else { return }
+            meetCat(.pausedReading)
+        }
+    }
+    private func meetCat(_ encounter: CatCompanion.Encounter) {
+        guard scenePhase == .active else { return }
+        companion.encounter(encounter)
     }
     private var emptyTitle: String {
         if model.adbPath == nil { return "连接你的 Android 工作流" }
@@ -214,6 +252,14 @@ struct ContentView: View {
                     ShortcutLabel("设置", systemImage: "gearshape", shortcut: .settings)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).help("外观、字号、显示列与保存位置 · ⌘,")
+                if companion.discovered {
+                    Button(action: companion.openDiary) {
+                        Image(systemName: "pawprint.fill")
+                            .font(.system(size: 12)).foregroundColor(palette.muted)
+                            .frame(width: 24, height: 24).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("猫的值班日记")
+                        .accessibilityLabel("打开猫的值班日记")
+                }
                 Spacer()
                 Label(model.adbPath == nil ? "ADB 未配置" : "ADB 已就绪",
                       systemImage: model.adbPath == nil ? "exclamationmark.circle" : "checkmark.shield")
@@ -272,7 +318,7 @@ struct ContentView: View {
             .help(model.paused ? "恢复列表显示，新收到的日志会出现在列表中 · ⌘P" : "冻结当前列表，后台继续采集日志 · ⌘P")
     }
     private var captureControl: some View {
-        Button { model.running ? model.stop() : model.start() } label: {
+        Button(action: model.toggleCapture) {
             Label(model.running ? "停止采集" : "开始采集", systemImage: model.running ? "stop.fill" : "play.fill").fixedSize()
         }.disabled(!model.running && !model.canStart).buttonStyle(.bordered)
             .help(model.running ? "停止接收手机日志，保留当前记录 · ⌘R" : "开始接收手机日志 · ⌘R")

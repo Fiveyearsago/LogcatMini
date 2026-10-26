@@ -191,6 +191,7 @@ struct LogTable: NSViewRepresentable {
     @Binding var selected: LogEntry?
     @ObservedObject var find = LogFindState()
     var activate: () -> Void = {}
+    var didCopy: () -> Void = {}
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = LogScrollView(), table = CopyTableView()
@@ -405,7 +406,8 @@ struct LogTable: NSViewRepresentable {
             guard let table = table else { return }
             let text = table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0].fullText : nil }.joined(separator: "\n")
             guard !text.isEmpty else { return }
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+            NSPasteboard.general.clearContents()
+            if NSPasteboard.general.setString(text, forType: .string) { parent.didCopy() }
         }
     }
 }

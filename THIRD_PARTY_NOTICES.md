@@ -19,3 +19,7 @@ Avalonia, .NET, SkiaSharp, HarfBuzzSharp, MicroCom, Tmds.DBus and related depend
 ## Android metadata helper
 
 `android-helper/` is original project code under the root MIT license. Its bundled JAR can be rebuilt using `scripts/build-android-helper.sh`. ADB and Android SDK tools are not redistributed by this repository.
+
+## Android device-info helper
+
+`android-helper/device-info/` is original project code. The bundled `DeviceInfo.apk` includes Google Play services Ads Identifier 18.2.0 and its transitive dependencies, obtained from Google Maven. These components retain their upstream licenses and [Google APIs terms](https://developers.google.com/terms); they are not relicensed under this repository's MIT license. The helper has no network permission and can be rebuilt with `scripts/build-device-info-helper.sh`. Local signing keys are not distributed.

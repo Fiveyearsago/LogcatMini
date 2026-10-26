@@ -71,6 +71,18 @@ A lightweight Android log viewer and device toolbox, with a native macOS app and
 
 界面还提供多种主题、字号调整和日志列设置，可以按屏幕大小和阅读习惯调整。
 
+## Mac 0.17.2 更新
+
+- 手机息屏后，点击投屏画面或黑边即可唤醒；不会自动解除密码锁，已亮屏时仍可正常操作。
+- 手机复制的文字会同步到 Mac；投屏中按 `⌘C` 获取手机所选文字，`⌘V` 将 Mac 剪贴板文字发送到手机。
+- 投屏顶部可查看设备信息，并按需安装设备信息助手读取 GAID。成功结果按设备缓存在本机；重开面板不会自动读取，刷新失败保留旧值。广告 ID 设置入口仅打开手机系统设置，由使用者确认操作。
+- “关于”显示版本号、构建号及精确到秒的发布时间，不附加时区文字；时间在构建时固定，安装或重启不会改变。
+- 增加猫咪互动、值班日记和纸箱彩蛋。
+
+设备信息助手没有联网权限，不在后台采集或保存 ID；只通过已授权 ADB 返回读取结果。Android ID 是当前用户的 ADB Shell 值，不代表其他应用的 SSAID。助手源码及构建方式见 [设备信息助手](android-helper/device-info/README.md)。
+
+自动测试继续在 [`feature/mac-automation`](https://github.com/Fiveyearsago/LogcatMini/tree/feature/mac-automation) 分支开发，包含本主线的全部功能。
+
 ## Mac 从源码运行
 
 运行环境为 macOS 13+；构建需要带 macOS SDK 的 Xcode、Swift 5.9+，以及首次下载录屏组件时的网络连接。ADB 请从 [Google Platform-Tools](https://developer.android.com/tools/releases/platform-tools) 获取，或使用已有 Android SDK。
@@ -84,7 +96,7 @@ bash scripts/build-app.sh
 open 'dist/Logcat Mini.app'
 ```
 
-`prepare-recording-runtime.sh` 下载指定版本的官方 scrcpy，校验 SHA-256，并准备投屏 / 录屏组件。第三方运行时二进制不提交到此仓库。仓库附带自有 Android 元数据辅助程序，其源码位于 `android-helper/`；修改后可使用 Android SDK 35、build-tools 35.0.0 和 JDK 17 运行 `bash scripts/build-android-helper.sh` 重建。
+`prepare-recording-runtime.sh` 下载指定版本的官方 scrcpy，校验 SHA-256，并准备投屏 / 录屏组件。第三方运行时二进制不提交到此仓库。仓库附带自有 Android 元数据和设备信息辅助程序，源码位于 `android-helper/`。元数据程序可使用 Android SDK 35、build-tools 35.0.0 和 JDK 17 运行 `bash scripts/build-android-helper.sh` 重建；设备信息助手构建方式见其 README。
 
 安装到当前用户的应用目录：`bash scripts/build-app.sh --install`。
 生成 Apple Silicon / Intel 通用 ZIP：`bash scripts/package-share.sh`。
@@ -102,7 +114,7 @@ open 'dist/Logcat Mini.app'
 
 ## 数据与网络
 
-日志保存在本机内存中；偏好、收藏及请求 / 媒体历史保存在使用者的本机目录。没有账号系统、日志上传后台或遥测。ADB 操作仅针对你已授权的设备。
+日志保存在本机内存中；偏好、收藏、设备 GAID 缓存及请求 / 媒体历史保存在使用者的本机目录。没有账号系统、日志上传后台或遥测。ADB 操作仅针对你已授权的设备。
 
 请求重放会把你编辑的请求发送到指定 URL。远程解密默认没有服务地址，只有在填写地址并点击“服务解密”时才发送所选 s。公钥 / 私钥需自行导入，只在本次运行中使用，不附带业务密钥。s 编解码仅支持文档描述的特定封装，不保证适用于任意应用，见 [s 串扩展说明](docs/s-packet.md)。
 

@@ -5,6 +5,42 @@ import CoreGraphics
 enum MirrorProtocol {
     static let serverVersion = "5.0.1"
     static let maximumPacketSize = 8 * 1024 * 1024
+    static let maximumClipboardSize = (1 << 18) - 5
+
+    enum DeviceMessage: Equatable {
+        case clipboard(String)
+        case clipboardAcknowledgement(UInt64)
+        case keyboardOutput
+    }
+
+    /// Exact reads preserve framing across fragmented/coalesced TCP packets.
+    static func deviceMessage(read: (Int) throws -> Data) throws -> DeviceMessage {
+        func exact(_ count: Int) throws -> Data {
+            let data = try read(count)
+            guard data.count == count else { throw MirrorError.message("手机控制消息不完整。") }
+            return data
+        }
+        switch try exact(1)[0] {
+        case 0:
+            let size = Int(try exact(4).mirrorInteger(at: 0, bytes: 4))
+            guard size <= maximumClipboardSize else { throw MirrorError.message("手机剪贴板消息过大。") }
+            guard let text = String(data: try exact(size), encoding: .utf8) else {
+                throw MirrorError.message("手机剪贴板文字编码无效。")
+            }
+            return .clipboard(text)
+        case 1:
+            return .clipboardAcknowledgement(try exact(8).mirrorInteger(at: 0, bytes: 8))
+        case 2:
+            let header = try exact(4)
+            _ = try exact(Int(header.mirrorInteger(at: 2, bytes: 2)))
+            return .keyboardOutput
+        default:
+            throw MirrorError.message("手机返回了不支持的控制消息，请重新连接投屏。")
+        }
+    }
+
+    static let copySelection = Data([8, 1]) // GET_CLIPBOARD with COPY key
+    static let getClipboard = Data([8, 0])
 
     enum Packet: Equatable {
         case session(width: Int, height: Int)
@@ -54,6 +90,10 @@ enum MirrorProtocol {
         }
         return data
     }
+
+    // KEYCODE_WAKEUP is idempotent: an already-awake phone stays awake.
+    // Do not use KEYCODE_POWER here, which would toggle the display off.
+    static let wakeUp = key(224)
 
     static func touch(action: UInt8, point: CGPoint, size: CGSize) -> Data {
         var data = Data([2, action])

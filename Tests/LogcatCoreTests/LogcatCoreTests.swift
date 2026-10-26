@@ -2,12 +2,12 @@ import XCTest
 @testable import LogcatCore
 
 final class LogcatCoreTests: XCTestCase {
-    private let line = "2026-10-12 16:35:55.138  1938 20223 E Happy Charge: 请求失败：http://localhost/path:a"
+    private let line = "2026-10-12 16:35:55.138  1938 20223 E Demo Tasks: 请求失败：http://localhost/path:a"
     func testParsesThreadtimeWithoutBreakingMessageColons() throws {
         let entry = try XCTUnwrap(LogParser.parse(line, id: 9))
         XCTAssertEqual(entry.date, "2026-10-12"); XCTAssertEqual(entry.time, "16:35:55.138")
         XCTAssertEqual(entry.pid, "1938"); XCTAssertEqual(entry.tid, "20223")
-        XCTAssertEqual(entry.level, .error); XCTAssertEqual(entry.tag, "Happy Charge")
+        XCTAssertEqual(entry.level, .error); XCTAssertEqual(entry.tag, "Demo Tasks")
         XCTAssertEqual(entry.message, "请求失败：http://localhost/path:a"); XCTAssertEqual(entry.raw, line)
     }
     func testLegacyDateAndAssertLevel() throws {
@@ -30,8 +30,8 @@ final class LogcatCoreTests: XCTestCase {
         let error = try XCTUnwrap(LogParser.parse(line, id: 1))
         let debug = try XCTUnwrap(LogParser.parse("2026-10-12 16:35:55.100 1 2 D Network: success", id: 2))
         XCTAssertEqual(try LogFilter(minimum: .warning).apply(to: [error, debug]), [error])
-        XCTAssertEqual(try LogFilter(query: "请求.*localhost", tag: "HAPPY", regex: true).apply(to: [error, debug]), [error])
-        XCTAssertTrue(try LogFilter(query: "success", tag: "Happy").apply(to: [error, debug]).isEmpty)
+        XCTAssertEqual(try LogFilter(query: "请求.*localhost", tag: "DEMO", regex: true).apply(to: [error, debug]), [error])
+        XCTAssertTrue(try LogFilter(query: "success", tag: "Demo").apply(to: [error, debug]).isEmpty)
         XCTAssertThrowsError(try LogFilter(query: "[", regex: true).apply(to: [error]))
     }
     func testPackageUIDParsingAndDeduplication() {

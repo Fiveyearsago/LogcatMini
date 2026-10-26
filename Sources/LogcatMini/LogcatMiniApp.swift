@@ -112,7 +112,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                 Button("清空当前视图", action: model.clear).appShortcut(.clear)
             }
             CommandMenu("日志") {
-                Button(model.running ? "停止采集" : "开始采集") { model.running ? model.stop() : model.start() }
+                Button(model.running ? "停止采集" : "开始采集", action: model.toggleCapture)
                     .appShortcut(.capture)
                 Button(model.paused ? "恢复滚动" : "暂停滚动", action: model.togglePause)
                     .appShortcut(.pause).disabled(!model.running && !model.paused)
@@ -123,7 +123,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             }
             CommandGroup(replacing: .appInfo) {
                 Button("关于 Logcat Mini") {
-                    NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Logcat Mini", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本", .credits: NSAttributedString(string: "轻量 Android 日志客户端\n原生 macOS · 本地采集 · 无需登录")])
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .applicationName: "Logcat Mini",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本",
+                        .credits: aboutCredits
+                    ])
                 }
             }
         }
@@ -147,6 +151,33 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             LocalBuildView(model: model, builds: model.builds, appearance: appearance)
                 .preferredColorScheme(appearance.theme.scheme).frame(minWidth: 820, minHeight: 650)
         }.defaultSize(width: 1000, height: 800)
+    }
+
+    private var aboutCredits: NSAttributedString {
+        let releaseTime: String
+        if let raw = Bundle.main.object(forInfoDictionaryKey: "LogcatMiniReleaseDate") as? String,
+           let date = ISO8601DateFormatter().date(from: raw) {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            releaseTime = formatter.string(from: date)
+        } else {
+            releaseTime = "未记录（开发构建）"
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let credits = NSMutableAttributedString(string: "发布时间：\(releaseTime)\n\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: paragraph
+        ])
+        credits.append(NSAttributedString(string: "轻量 Android 日志客户端\n原生 macOS · 本地采集 · 无需登录", attributes: [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph
+        ]))
+        return credits
     }
 }
 

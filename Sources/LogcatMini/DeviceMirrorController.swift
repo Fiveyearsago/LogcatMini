@@ -61,6 +61,15 @@ import LogcatCore
             }
         }
         session.onFrame = { [weak frames] pixel in frames?.submit(pixel, generation: token) }
+        session.onClipboard = { [weak self] text in
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == token, self.session != nil else { return }
+                if NSPasteboard.general.string(forType: .string) != text {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            }
+        }
         session.onKeyboardNotice = { [weak self] message in
             Task { @MainActor [weak self] in
                 guard let self, self.generation == token, self.hideSoftKeyboard else { return }
@@ -109,6 +118,10 @@ import LogcatCore
         guard isStreaming, let currentPath, !serial.isEmpty, !installer.isInstalling else { return nil }
         return APKInstallTarget(path: currentPath, serial: serial, name: deviceName)
     }
+    var deviceInfoTarget: DeviceInfoTarget? {
+        guard isStreaming, let currentPath, !serial.isEmpty else { return nil }
+        return DeviceInfoTarget(path: currentPath, serial: serial, name: deviceName)
+    }
     @discardableResult func installAPK(_ url: URL, target: APKInstallTarget) -> Bool {
         guard apkTarget == target else {
             installer.reportFailure("投屏设备已变化或断开，请确认目标手机后重新拖入 APK。"); return false
@@ -118,7 +131,10 @@ import LogcatCore
 
     func send(_ data: Data) { guard isStreaming else { return }; session?.send(data) }
     func key(_ code: UInt32) { send(MirrorProtocol.key(code)) }
+    func wakeUp() { send(MirrorProtocol.wakeUp) }
     func openKeyboardSettings() { send(MirrorProtocol.openKeyboardSettings) }
+    func copySelection() { send(MirrorProtocol.copySelection) }
+    func copyDeviceClipboard() { send(MirrorProtocol.getClipboard) }
 
     private func clearKeyboardStatus() {
         keyboardTask?.cancel(); keyboardTask = nil

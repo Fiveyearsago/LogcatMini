@@ -7,7 +7,7 @@ let package = Package(
     products: [.executable(name: "LogcatMini", targets: ["LogcatMini"])],
     targets: [
         .target(name: "LogcatCore"),
-        .executableTarget(name: "LogcatMini", dependencies: ["LogcatCore"], resources: [.copy("Resources/AppMetadata.jar"), .copy("Resources/Recording")]),
+        .executableTarget(name: "LogcatMini", dependencies: ["LogcatCore"], resources: [.copy("Resources/AppMetadata.jar"), .copy("Resources/DeviceInfo.apk"), .copy("Resources/Recording")]),
         .testTarget(name: "LogcatCoreTests", dependencies: ["LogcatCore"], resources: [.copy("Fixtures")]),
         .testTarget(name: "LogcatMiniTests", dependencies: ["LogcatMini", "LogcatCore"])
     ]

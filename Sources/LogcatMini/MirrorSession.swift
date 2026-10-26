@@ -24,6 +24,7 @@ final class MirrorSession: @unchecked Sendable {
     var onFrame: (CVPixelBuffer) -> Void = { _ in }
     var onEnd: (String) -> Void = { _ in }
     var onKeyboardNotice: @Sendable (String) -> Void = { _ in }
+    var onClipboard: @Sendable (String) -> Void = { _ in }
 
     init(path: String, serial: String, server: URL) { self.path = path; self.serial = serial; self.server = server }
 
@@ -91,7 +92,7 @@ final class MirrorSession: @unchecked Sendable {
             process.arguments = ["-s", serial, "shell", "CLASSPATH=" + remote, "app_process", "/", "com.genymobile.scrcpy.Server",
                                  MirrorProtocol.serverVersion, "scid=" + identifier, "log_level=warn", "audio=false", "control=true",
                                  "tunnel_forward=true", "video_codec=h264", "max_size=1280", "max_fps=30", "video_bit_rate=4000000",
-                                 "clipboard_autosync=false", "power_on=true", "cleanup=false"]
+                                 "clipboard_autosync=true", "power_on=true", "cleanup=false"]
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = pipe; process.standardError = pipe
             // Atomic with stop: a cancelled startup must never launch a late child.
@@ -122,9 +123,16 @@ final class MirrorSession: @unchecked Sendable {
             let input = try MirrorSocket(port: number)
             try register(input, video: false)
             input.setReadTimeout(seconds: 0)
-            // No clipboard auto-sync. Drain device messages (e.g. paste acknowledgements).
-            DispatchQueue.global(qos: .utility).async {
-                while (try? input.read(count: 1)) != nil {}
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                do {
+                    while let self, !self.isCancelled {
+                        let message = try MirrorProtocol.deviceMessage(read: input.read)
+                        if case .clipboard(let text) = message, !self.isCancelled { self.onClipboard(text) }
+                    }
+                } catch {
+                    guard let self, !self.isCancelled else { return }
+                    self.stop(); self.onEnd(error.localizedDescription)
+                }
             }
             _ = try first.read(count: 64) // device name; the UI uses the selected ADB device
             guard try first.read(count: 4) == Data("h264".utf8) else { throw MirrorError.message("手机返回了不支持的视频格式。") }

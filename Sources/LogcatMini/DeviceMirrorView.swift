@@ -14,6 +14,7 @@ struct DeviceMirrorPanel: View {
     let close: () -> Void
     @State private var text = ""
     @State private var textError = false
+    @State private var showingDeviceInfo = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,21 @@ struct DeviceMirrorPanel: View {
                 Image(systemName: "iphone.gen3.radiowaves.left.and.right").foregroundColor(palette.accent)
                 Text("手机投屏").font(.system(size: 13, weight: .semibold))
                 Spacer(minLength: 0)
+                Button { showingDeviceInfo = true } label: { Image(systemName: "info.circle") }
+                    .disabled(mirror.deviceInfoTarget == nil).help("设备信息与 GAID").accessibilityLabel("设备信息与 GAID")
+                    .popover(isPresented: $showingDeviceInfo, arrowEdge: .top) {
+                        if let target = mirror.deviceInfoTarget {
+                            DeviceInfoView(target: target) { showingDeviceInfo = false }
+                                .id(target.serial)
+                        }
+                    }
+                Menu {
+                    Button("复制手机所选文字（⌘C）", action: mirror.copySelection)
+                    Button("获取手机剪贴板", action: mirror.copyDeviceClipboard)
+                } label: { Image(systemName: "doc.on.clipboard") }
+                    .menuStyle(.borderlessButton).fixedSize().disabled(!mirror.isStreaming)
+                    .help("手机复制的文字会自动同步到 Mac；也可手动获取剪贴板")
+                    .accessibilityLabel("手机剪贴板")
                 ScreenshotControl(takingScreenshot: media.takingScreenshot, canCapture: canCapture,
                                   compact: true, save: takeScreenshot, copy: copyScreenshot)
                 Button(action: toggleRecording) {
@@ -100,9 +116,10 @@ struct DeviceMirrorPanel: View {
             Text(textError ? "文字过长，请缩短后发送。" : "回车发送文字 · 拖入 APK 安装到此手机")
                 .font(.system(size: 10)).foregroundColor(textError ? palette.warning : palette.muted)
                 .padding(.horizontal, 8).padding(.vertical, 10)
-                .help("点画面后可用键盘输入英文；中文可在上方输入后发送，或在画面中按 ⌘V 粘贴。发送文字会写入手机剪贴板。")
+                .help("手机复制的文字会自动同步到 Mac。点画面后按 ⌘C 复制手机所选文字，⌘V 粘贴到手机；中文也可在上方输入后发送。发送文字会写入手机剪贴板。")
         }.background(palette.panel)
-            .onChange(of: mirror.serial) { _ in text = ""; textError = false }
+            .onChange(of: mirror.serial) { _ in text = ""; textError = false; showingDeviceInfo = false }
+            .onChange(of: mirror.isStreaming) { streaming in if !streaming { showingDeviceInfo = false } }
     }
     private var status: String {
         if case .failed(let message) = mirror.state { return message }
@@ -177,7 +194,7 @@ final class MirrorSurfaceView: NSView {
         videoLayer.videoGravity = .resizeAspect
         layer?.addSublayer(videoLayer)
         setAccessibilityElement(true); setAccessibilityRole(.image)
-        setAccessibilityLabel("手机投屏画面"); setAccessibilityHelp("点击或拖动操作手机，滚轮滑动，右键返回。点击后可使用键盘或 Command V 粘贴。拖入一个 APK 安装到当前手机。")
+        setAccessibilityLabel("手机投屏画面"); setAccessibilityHelp("点击或拖动操作手机，息屏时点击画面或黑边可唤醒，滚轮滑动，右键返回。Command C 复制手机所选文字，Command V 粘贴到手机。手机复制的文字自动同步到 Mac。拖入一个 APK 安装到当前手机。")
         registerForDraggedTypes([.fileURL])
         resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancelTouch() }
@@ -238,10 +255,14 @@ final class MirrorSurfaceView: NSView {
         MirrorProtocol.devicePoint(convert(event.locationInWindow, from: nil), in: bounds, video: videoSize, clamp: clamp)
     }
     override func mouseDown(with event: NSEvent) {
-        guard mirror?.isStreaming == true, let point = point(event) else { return }
+        guard let mirror, mirror.isStreaming else { return }
         window?.makeFirstResponder(self)
+        // Wake even when the click falls in the aspect-fit black border. The
+        // serial input queue sends this before touch-down, without ADB polling.
+        mirror.wakeUp()
+        guard let point = point(event) else { return }
         touchSize = videoSize; touchPoint = point
-        mirror?.send(MirrorProtocol.touch(action: 0, point: point, size: touchSize))
+        mirror.send(MirrorProtocol.touch(action: 0, point: point, size: touchSize))
     }
     override func mouseDragged(with event: NSEvent) {
         guard touchPoint != nil, let point = point(event, clamp: true) else { return }
@@ -265,6 +286,11 @@ final class MirrorSurfaceView: NSView {
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return false }
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers == "c" {
+            mirror?.copySelection()
+            return true
+        }
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "v" {
             if let text = NSPasteboard.general.string(forType: .string) { mirror?.sendText(text) }
             return true

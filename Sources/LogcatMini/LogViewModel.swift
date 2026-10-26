@@ -163,6 +163,7 @@ final class LogInbox {
         }
     }
     @Published var running = false
+    @Published private(set) var completedCaptureCount = 0
     @Published var follow = true
     @Published var paused = false
     @Published var totalCount = 0
@@ -416,6 +417,12 @@ final class LogInbox {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    func toggleCapture() {
+        if running {
+            stop()
+            completedCaptureCount += 1
+        } else { start() }
+    }
     func stop() { stream.stop(); flush(limit: nil); running = false; generation = UUID(); inbox.reset(generation) }
     func togglePause() {
         paused.toggle()
@@ -479,9 +486,11 @@ final class LogInbox {
             listFind.replaceMatches([])
         }
     }
-    func copyDetail(_ text: String) {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-        notice = "已复制日志详情"
+    @discardableResult func copyDetail(_ text: String) -> Bool {
+        NSPasteboard.general.clearContents()
+        let copied = NSPasteboard.general.setString(text, forType: .string)
+        notice = copied ? "已复制日志详情" : "未能复制日志详情"
+        return copied
     }
     func export() {
         let panel = NSSavePanel(); panel.title = "导出当前筛选的日志"

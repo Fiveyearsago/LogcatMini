@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+    <queries>
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.android.vending" />
+    </queries>
+    <application android:label="Logcat Mini 设备信息" android:allowBackup="false" android:supportsRtl="true">
+        <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+    </application>
+    <instrumentation android:name=".DeviceInfoReader" android:targetPackage="com.songran.logcatmini.deviceinfo" />
+</manifest>

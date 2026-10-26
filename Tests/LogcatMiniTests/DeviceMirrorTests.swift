@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import CoreVideo
 import LogcatCore
 @testable import LogcatMini
@@ -60,6 +61,91 @@ final class DeviceMirrorTests: XCTestCase {
         XCTAssertEqual(MirrorProtocol.nalUnits(Data([0,0,0,1,0x67,4,5,0,0,1,0x68,6,0,0,0,1,0x65,7])),
                        [Data([0x67,4,5]), Data([0x68,6]), Data([0x65,7])])
         XCTAssertTrue(MirrorProtocol.nalUnits(Data([1,2,3])).isEmpty)
+    }
+
+    func testWakeUsesWakeupKeyDownAndUpRatherThanPowerToggle() {
+        let wake = MirrorProtocol.wakeUp
+        XCTAssertEqual(wake.count, 28)
+        for (offset, action) in [(0, UInt8(0)), (14, UInt8(1))] {
+            XCTAssertEqual(wake[offset], 0)
+            XCTAssertEqual(wake[offset + 1], action)
+            XCTAssertEqual(wake.mirrorInteger(at: offset + 2, bytes: 4), 224)
+            XCTAssertEqual(wake.mirrorInteger(at: offset + 6, bytes: 4), 0)
+            XCTAssertEqual(wake.mirrorInteger(at: offset + 10, bytes: 4), 0)
+        }
+    }
+
+    @MainActor func testRealDeviceSurfaceClickWakesScreenWhenRequested() async throws {
+        guard let serial = ProcessInfo.processInfo.environment["LOGCAT_MINI_MIRROR_WAKE_DEVICE"], let path = ADB.locate() else {
+            throw XCTSkip("Set LOGCAT_MINI_MIRROR_WAKE_DEVICE to enable sleep/wake QA on a physical device")
+        }
+        let devices = AndroidDevice.parse(try await ADB.run(path: path, arguments: ["devices", "-l"]))
+        let device = try XCTUnwrap(devices.first { $0.id == serial && $0.ready })
+        func isAwake() async throws -> Bool {
+            let power = try await ADB.run(path: path, arguments: ["-s", serial, "shell", "dumpsys", "power"])
+            return power.contains("mWakefulness=Awake")
+        }
+        func setPower(_ code: String) async throws {
+            _ = try await ADB.run(path: path, arguments: ["-s", serial, "shell", "input", "keyevent", code])
+        }
+        func waitForPower(awake: Bool) async throws {
+            for _ in 0..<40 {
+                if try await isAwake() == awake { return }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            XCTFail("Expected phone awake=\(awake)")
+        }
+        let wasAwake = try await isAwake()
+        let suite = "MirrorWakeTests." + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let mirror = DeviceMirrorController(defaults: defaults)
+        _ = NSApplication.shared
+        let surface = MirrorSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = surface
+        surface.mirror = mirror
+        mirror.frames.display = { [weak surface] pixel in surface?.display(pixel) }
+        func click(_ point: CGPoint) throws {
+            for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type,
+                    location: surface.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                if type == .leftMouseDown { surface.mouseDown(with: event) }
+                else { surface.mouseUp(with: event) }
+            }
+        }
+        do {
+            mirror.connect(path: path, device: device)
+            for _ in 0..<150 {
+                if mirror.isStreaming { break }
+                if case .failed(let message) = mirror.state { throw MirrorError.message(message) }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            XCTAssertTrue(mirror.isStreaming)
+            _ = try XCTUnwrap(mirror.frames.latest)
+            let content = MirrorProtocol.contentRect(in: surface.bounds, video: mirror.videoSize)
+            let border = content.minX > 0 ? CGPoint(x: content.minX / 2, y: content.midY)
+                : CGPoint(x: content.midX, y: content.minY / 2)
+            XCTAssertNil(MirrorProtocol.devicePoint(border, in: surface.bounds, video: mirror.videoSize))
+            for point in [CGPoint(x: content.midX, y: content.midY), border] {
+                try await setPower("223") // KEYCODE_SLEEP, never toggle.
+                try await waitForPower(awake: false)
+                XCTAssertTrue(mirror.isStreaming, "Sleeping must not disconnect mirroring")
+                try click(point)
+                try await waitForPower(awake: true)
+                // Clicking the border again must leave the screen on and inject no touch.
+                try click(border)
+                try await Task.sleep(nanoseconds: 300_000_000)
+                let stillAwake = try await isAwake()
+                XCTAssertTrue(stillAwake)
+            }
+        } catch {
+            await mirror.finishBeforeQuit()
+            try? await setPower(wasAwake ? "224" : "223")
+            throw error
+        }
+        await mirror.finishBeforeQuit()
+        try await setPower(wasAwake ? "224" : "223")
     }
 
     func testTemporaryKeyboardWireFormat() {
