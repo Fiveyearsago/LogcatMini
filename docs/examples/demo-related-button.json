@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "demo-related-button",
+  "name": "合成示例：重复按钮关系定位",
+  "revision": 1,
+  "app": {
+    "packageName": "com.example.demo"
+  },
+  "cases": [
+    {
+      "priority": "P1",
+      "startPolicy": "restart",
+      "timeoutMs": 180000,
+      "preconditionNotes": "合成示例：请替换包名、控件和日志约定，使用已授权且独占的测试设备。",
+      "id": "ACTION-001",
+      "name": "点击 Downloads 下方的 Go 并核验结果",
+      "steps": [
+        {
+          "id": "section",
+          "action": "assertVisible",
+          "target": {
+            "text": "Downloads"
+          },
+          "name": "检查参照文字可见"
+        },
+        {
+          "id": "action",
+          "action": "tap",
+          "target": {
+            "id": "com.example.demo:id/action",
+            "text": "Go",
+            "belowText": "Downloads"
+          },
+          "name": "点击参照文字下方的按钮"
+        },
+        {
+          "id": "result",
+          "action": "assertText",
+          "target": {
+            "id": "com.example.demo:id/result"
+          },
+          "expected": "Complete",
+          "match": "exact",
+          "name": "检查页面结果"
+        },
+        {
+          "id": "event",
+          "action": "assertLog",
+          "tag": "Demo.Actions",
+          "content": "event=completed action=download",
+          "match": "contains",
+          "sinceStep": "action",
+          "timeoutMs": 10000,
+          "name": "检查动作完成日志"
+        },
+        {
+          "id": "screen",
+          "action": "screenshot",
+          "name": "保存截图"
+        }
+      ],
+      "requirement": "验证合成示例约定的页面和日志结果；请按目标应用修改"
+    }
+  ]
+}

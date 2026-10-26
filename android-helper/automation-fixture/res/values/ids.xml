@@ -1,0 +1,11 @@
+<resources>
+    <item type="id" name="home_title" />
+    <item type="id" name="settings_button" />
+    <item type="id" name="language_value" />
+    <item type="id" name="english_button" />
+    <item type="id" name="chinese_button" />
+    <item type="id" name="name_input" />
+    <item type="id" name="save_button" />
+    <item type="id" name="result_text" />
+    <item type="id" name="back_button" />
+</resources>

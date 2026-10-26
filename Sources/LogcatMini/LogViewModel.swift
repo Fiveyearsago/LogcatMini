@@ -38,6 +38,8 @@ final class LogInbox {
     let listFind = LogFindState()
     let detailFind = LogFindState()
     let media = DeviceMediaController()
+    lazy var automation = AutomationModel(defaults: defaults)
+    @Published var automationVisible = false
     let mirror: DeviceMirrorController
     let builds: LocalBuildController
     var localBuildTarget: LocalBuildController.Target? {
@@ -113,11 +115,13 @@ final class LogInbox {
         detailFormatted.toggle(); activeFindPane = .detail
     }
     func takeScreenshot(copy: Bool = false) {
+        guard !automation.busy || automation.serial != selectedSerial else { return }
         guard let path = adbPath, let device, device.ready else { return }
         if copy { media.copyScreenshot(path: path, device: device) }
         else { media.screenshot(path: path, device: device) }
     }
     func toggleRecording() {
+        guard !automation.busy || automation.serial != selectedSerial else { return }
         if media.saving { return }
         if media.recording { media.stopRecording() }
         else if media.canRetry { media.retrySave() }

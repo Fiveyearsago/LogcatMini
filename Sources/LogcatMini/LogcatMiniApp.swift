@@ -13,7 +13,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // It is confined to this app; no global shortcut or accessibility permission.
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard NSApp.modalWindow == nil else { return event }
-            let inLogs = event.window?.title == "Logcat Mini"
+            let inLogs = event.window?.title == "Logcat Mini" && self?.model?.automationVisible != true
             if event.window?.title == "模拟接口请求", event.keyCode == 53,
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
                self?.replay?.responseFullscreen == true {
@@ -42,9 +42,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
+        let automation = model.automation
+        if automation.busy {
+            let alert = NSAlert()
+            alert.messageText = "自动测试正在运行"
+            alert.informativeText = "停止后会保存已有结果，未执行的步骤不会继续。"
+            alert.addButton(withTitle: "返回任务"); alert.addButton(withTitle: "停止并退出")
+            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        }
         let media = model.media
-        guard media.recording || media.saving || media.takingScreenshot || model.mirror.hasPendingSessions || model.builds.busy || model.builds.detecting else { return .terminateNow }
+        guard automation.busy || media.recording || media.saving || media.takingScreenshot || model.mirror.hasPendingSessions || model.builds.busy || model.builds.detecting else { return .terminateNow }
         Task {
+            await automation.finishBeforeQuit()
             let allowed = await media.finishBeforeQuit()
             if allowed { await model.builds.finishBeforeQuit(); await model.mirror.finishBeforeQuit() }
             sender.reply(toApplicationShouldTerminate: allowed)
@@ -65,7 +74,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     @StateObject private var sDecrypt = LogSDecryptionStore()
     var body: some Scene {
         WindowGroup("Logcat Mini") {
-            ContentView(model: model, appearance: appearance, replay: replay, sDecrypt: sDecrypt)
+            MainWorkspaceView(model: model, appearance: appearance, replay: replay, sDecrypt: sDecrypt)
                 .preferredColorScheme(appearance.theme.scheme)
                 .frame(minWidth: 1040, minHeight: 640)
                 .onAppear { delegate.model = model; delegate.appearance = appearance; delegate.replay = replay; model.begin() }

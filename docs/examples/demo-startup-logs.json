@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "demo-startup-logs",
+  "name": "合成示例：启动日志窗口",
+  "revision": 1,
+  "app": {
+    "packageName": "com.example.demo"
+  },
+  "cases": [
+    {
+      "priority": "P1",
+      "startPolicy": "restart",
+      "timeoutMs": 180000,
+      "preconditionNotes": "合成示例：请替换包名、控件和日志约定，使用已授权且独占的测试设备。",
+      "id": "START-001",
+      "name": "观察启动成功事件并排除错误",
+      "steps": [
+        {
+          "id": "restart",
+          "action": "restartApp",
+          "name": "重启应用并开始日志窗口"
+        },
+        {
+          "id": "ready",
+          "action": "assertLog",
+          "tag": "Demo.Startup",
+          "content": "event=ready\\b.*status=ok\\b",
+          "match": "regex",
+          "sinceStep": "restart",
+          "timeoutMs": 10000,
+          "name": "检查成功事件"
+        },
+        {
+          "id": "no-error",
+          "action": "assertNoLog",
+          "tag": "Demo.Startup",
+          "content": "event=error",
+          "match": "contains",
+          "sinceStep": "restart",
+          "timeoutMs": 1000,
+          "name": "观察窗口内没有错误事件"
+        },
+        {
+          "id": "foreground",
+          "action": "assertForeground",
+          "name": "检查应用位于前台"
+        },
+        {
+          "id": "screen",
+          "action": "screenshot",
+          "name": "保存截图"
+        }
+      ],
+      "requirement": "验证合成示例约定的页面和日志结果；请按目标应用修改"
+    }
+  ]
+}

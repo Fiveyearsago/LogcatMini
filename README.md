@@ -81,7 +81,9 @@ A lightweight Android log viewer and device toolbox, with a native macOS app and
 
 设备信息助手没有联网权限，不在后台采集或保存 ID；只通过已授权 ADB 返回读取结果。Android ID 是当前用户的 ADB Shell 值，不代表其他应用的 SSAID。助手源码及构建方式见 [设备信息助手](android-helper/device-info/README.md)。
 
-自动测试继续在 [`feature/mac-automation`](https://github.com/Fiveyearsago/LogcatMini/tree/feature/mac-automation) 分支开发，包含本主线的全部功能。
+当前为 `feature/mac-automation` 实验分支，包含 Mac 主线全部功能。主窗口顶部可切换“日志 / 自动测试”：支持完整 APK 安装、固定用例执行、控件定位、日志断言、失败截图、历史复测与 Markdown 报告导出。新增 `belowText` 关系定位、动态页面控件树回退及新版 aapt2 元数据解析。
+
+构建、组件配置、离线演示及限制见 [自动测试使用说明](docs/automation-testing-mac-preview.md)。测试使用本机 ADB / Maestro，不接入 AI；日志和截图留在本机，分享报告前需自行检查其中的业务信息。
 
 ## Mac 从源码运行
 
