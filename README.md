@@ -2,9 +2,9 @@
 
 **少一点噪声，多一点线索。**
 
-Logcat Mini 是一款轻量的 Android 日志与设备调试工具，把查日志、操作手机、截图录屏和运行本地项目放在一起。连接已授权的 Android 设备，选中应用，就可以开始排查问题。
+Logcat Mini 是一款轻量的日志与设备调试工具，把查日志、操作手机、截图录屏和运行本地项目放在一起。Mac 版支持 Android、iOS 真机和模拟器；连接已授权的设备，选中应用，即可开始排查问题。
 
-A lightweight Android log viewer and device toolbox, with a native macOS app and a Windows preview.
+A lightweight log viewer and device toolbox, with Android and iOS support in the native macOS app and an Android-focused Windows preview.
 
 [![macOS checks](https://github.com/Fiveyearsago/LogcatMini/actions/workflows/macos.yml/badge.svg)](https://github.com/Fiveyearsago/LogcatMini/actions/workflows/macos.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -14,6 +14,21 @@ A lightweight Android log viewer and device toolbox, with a native macOS app and
 [功能介绍](#功能介绍) · [从源码运行](#mac-从源码运行) · [开始使用](#开始使用) · [数据与网络](#数据与网络) · [参与贡献](CONTRIBUTING.md)
 
 > 以下截图使用实际 Mac 界面；设备、应用、日志、手机演示画面和构建输出均为合成数据，不包含真实用户数据。点击图片可查看原图。
+
+## iOS 真机与模拟器（Mac 0.20.1）
+
+窗口顶部切换到「iOS · 真机 / 模拟器」。两端共用日志表格、详情和筛选组件，支持关键词 / Tag / 等级 / 正则、过滤历史与收藏、查找、跟随、暂停滚动、可调整侧栏与详情、全屏、主题字号和显示列、JSON 格式化、复制、导出、模拟请求及 s 串解密。快捷键作用于当前平台，切换平台不会停止另一端采集或清除缓存。
+
+- **应用与设备**：显示应用名称、Bundle ID、收藏图标，支持收藏 / 取消收藏、折叠分组、应用搜索、系统应用开关、设备信息与复制。日志会话按设备和 Bundle ID 分开保存；手动进程 / PID 有独立会话。缓存保留到退出，重要日志请先导出。
+- **截图与录屏**：工具栏和快捷键支持保存并复制截图、仅复制、开始 / 停止录屏；录屏最长 3 分钟，停止后等待 MP4 完成再保存。目标固定为开始时的设备，切换设备不会改录制目标。失败时保留临时文件并支持重试；退出会等待保存。Android / iOS 共用媒体目录与历史，预览、打开和 Finder 定位功能一致。
+- **手机投屏**：支持调整宽度、重连、截图、录屏、设备信息、手动双向剪贴板传输和拖入 / 选择 `.app` 安装运行。模拟器以原始分辨率无损 PNG 持续刷新（上限约 12 fps，实际随画面复杂度变化），不再缩为 960 像素 JPEG，可直接点击、长按、拖动、滚动；点击模拟器输入框后支持 Mac 键盘 / 中文输入法、`⌘V`、`⌘A`、退格、方向键与回车，也可用面板底部输入框发送文字。文字通过所选模拟器剪贴板粘贴，避免二次经过 iOS 输入法后改写符号；会替换该模拟器的剪贴板。关闭投屏、失去焦点和切换设备时释放触控与按键。内嵌控制目前适配 Xcode 27 的 DTUHID；旧运行时或接口不可用时保留画面预览并提示打开模拟器窗口。真机仍为约每秒刷新的预览，在 iPhone 上操作。
+- **本地编译运行**：应用右键或工具栏齿轮关联 Flutter / Xcode 项目。Flutter 支持 SDK 路径、入口、flavor、debug / profile / release 和逐行 Dart Defines；模拟器限 debug。Xcode 支持 Workspace / Project、Scheme 和 Configuration。显示当前分支、构建输出，支持取消和导出。编译成功后核对 Bundle ID / iPhoneSimulator 或 iPhoneOS 平台，复制产物快照，安装到开始时选定的设备，接入日志并启动。不会主动卸载原应用或清理数据；真机签名沿用项目配置。
+- **模拟器准备**：安装完整 Xcode 并使 `xcode-select` 指向它，在 Device Hub（Xcode 27 起）或 Simulator 中启动 iPhone / iPad。面板的「打开 Device Hub / Simulator」自动匹配所选 Xcode；Xcode 27 没有旧路径的 Simulator.app 属于正常布局变化。自动发现已启动设备；使用 `simctl` 采集统一日志、截图和录屏。选择应用时按可执行文件完整路径过滤，避免不同 Flutter App 的 `Runner` 日志混淆。
+- **真机准备**：通过 USB 连接并信任 Mac，安装 `brew install libimobiledevice`，用 `idevicesyslog` 采集。应用列表、图标、录屏、剪贴板和安装使用当前 Xcode 的 `devicectl`，依赖 Xcode / iOS 版本与设备准备状态；截图可回退到 `idevicescreenshot`。旧版工具缺少能力时显示具体失败原因，应用列表可回退到运行进程。真机同名进程可手动填写 PID 区分，重启 App 后需更新 PID。
+- **日志来源**：支持写入 iOS 系统日志的 Flutter `print` / `debugPrint` 和原生日志。仅调试器 / Dart VM Service 可见的输出、未打印的请求体、应用主动省略的加密 s 和 `<private>` 内容无法从系统日志还原。模拟请求与解密需要日志包含完整数据。
+
+验收与兼容范围见 [iOS 验证说明](docs/ios-validation.md)。模拟器控制组件独立运行；未安装 Xcode 不影响 Android 使用。接口参考 [Meta idb](https://github.com/meta/idb)，MIT 许可随应用附带。Windows 功能未改变。
+
 
 ## 功能介绍
 

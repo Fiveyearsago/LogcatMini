@@ -3,6 +3,7 @@ import Combine
 import LogcatCore
 
 final class LogInbox {
+    enum Format { case android, iosDevice, iosSimulator }
     private let lock = NSLock()
     private var session = UUID()
     private var nextID: UInt64 = 0
@@ -11,14 +12,23 @@ final class LogInbox {
     private var previous: LogEntry?
     private var dropped = 0
     func reset(_ id: UUID) { lock.lock(); defer { lock.unlock() }; session = id; pending.removeAll(); consumed = 0; previous = nil; dropped = 0 }
-    func receive(_ lines: [String], session id: UUID) {
+    func receive(_ lines: [String], session id: UUID, format: Format = .android) {
         lock.lock(); defer { lock.unlock() }
         guard session == id else { return }
         for line in lines {
             if line.hasPrefix("---------") || line.isEmpty { continue }
+            if format == .iosDevice && (line.hasPrefix("[connected:") || line.hasPrefix("[disconnected:")) {
+                previous = nil; continue
+            }
             nextID += 1
-            if let parsed = LogParser.parse(line, id: nextID) { pending.append(parsed); previous = parsed }
-            else if let p = previous {
+            let parsed: LogEntry?
+            switch format {
+            case .android: parsed = LogParser.parse(line, id: nextID)
+            case .iosDevice: parsed = IOSLogParser.device(line, id: nextID)
+            case .iosSimulator: parsed = IOSLogParser.simulator(line, id: nextID)
+            }
+            if let parsed { pending.append(parsed); previous = parsed }
+            else if format != .iosSimulator, let p = previous {
                 pending.append(LogEntry(id: nextID, date: p.date, time: p.time, pid: p.pid, tid: p.tid, level: p.level, tag: p.tag, message: line, raw: line))
             }
         }
@@ -394,10 +404,10 @@ final class LogInbox {
         }
     }
 
-    func selectPackage(_ id: String) {
+    func selectPackage(_ id: String, startCapture: Bool = true) {
         guard selectedPackage != id else { return }
         stop(); saveSession(); selectedPackage = id
-        restoreSession(); start()
+        restoreSession(); if startCapture { start() }
     }
 
     func start() {

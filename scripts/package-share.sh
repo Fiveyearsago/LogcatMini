@@ -3,7 +3,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# Build the normal app shell, then replace its executable with both Mac architectures.
+# Build the normal app shell, then replace both executables with universal binaries.
 bash scripts/build-app.sh
 swift build -c release --arch arm64 --arch x86_64 --scratch-path .build/distribution
 PRODUCTS=$(swift build -c release --arch arm64 --arch x86_64 --scratch-path .build/distribution --show-bin-path)
@@ -16,16 +16,19 @@ APP="$STAGE/Logcat Mini.app"
 mkdir -p "$STAGE"
 ditto 'dist/Logcat Mini.app' "$APP"
 cp "$PRODUCTS/LogcatMini" "$APP/Contents/MacOS/LogcatMini"
+cp "$PRODUCTS/IOSSimulatorBridge" "$APP/Contents/MacOS/IOSSimulatorBridge"
 rm -rf "$APP/Contents/Resources/LogcatMini_LogcatMini.bundle"
 ditto "$PRODUCTS/LogcatMini_LogcatMini.bundle" "$APP/Contents/Resources/LogcatMini_LogcatMini.bundle"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-BINARY_ARCHITECTURES=$(lipo -archs "$APP/Contents/MacOS/LogcatMini")
-for REQUIRED_ARCH in arm64 x86_64; do
-    if [[ " $BINARY_ARCHITECTURES " != *" $REQUIRED_ARCH "* ]]; then
-        printf 'Missing required architecture: %s\n' "$REQUIRED_ARCH" >&2
-        exit 1
-    fi
+for BINARY in LogcatMini IOSSimulatorBridge; do
+    BINARY_ARCHITECTURES=$(lipo -archs "$APP/Contents/MacOS/$BINARY")
+    for REQUIRED_ARCH in arm64 x86_64; do
+        if [[ " $BINARY_ARCHITECTURES " != *" $REQUIRED_ARCH "* ]]; then
+            printf 'Missing required architecture in %s: %s\n' "$BINARY" "$REQUIRED_ARCH" >&2
+            exit 1
+        fi
+    done
 done
 cp README.md "$STAGE/README.md"
 cp LICENSE THIRD_PARTY_NOTICES.md "$STAGE/"

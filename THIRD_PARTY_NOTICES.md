@@ -2,6 +2,10 @@
 
 The root MIT license applies to original Logcat Mini code, not to third-party components.
 
+## iOS simulator control
+
+`IOSSimulatorBridge` adapts simulator XPC lookup, input protocol and framebuffer interfaces from Meta idb (MIT). See [the idb license](docs/licenses/idb.txt), also included in the compiled app. Apple Xcode frameworks are dynamically loaded from the user's installed Xcode and are not redistributed.
+
 ## macOS recording and mirroring
 
 The source repository does not distribute third-party recording executables. `scripts/prepare-recording-runtime.sh` downloads official scrcpy 5.0.1 archives, verifies their SHA-256 digests and prepares a local Universal executable plus the matching Android server.

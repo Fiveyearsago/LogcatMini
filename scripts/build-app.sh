@@ -6,6 +6,9 @@ swift build -c release
 APP_DIR="$PROJECT_DIR/dist/Logcat Mini.app"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp .build/release/LogcatMini "$APP_DIR/Contents/MacOS/LogcatMini"
+cp .build/release/IOSSimulatorBridge "$APP_DIR/Contents/MacOS/IOSSimulatorBridge"
+mkdir -p "$APP_DIR/Contents/Resources/Licenses"
+cp docs/licenses/idb.txt "$APP_DIR/Contents/Resources/Licenses/idb.txt"
 ditto .build/release/LogcatMini_LogcatMini.bundle "$APP_DIR/Contents/Resources/LogcatMini_LogcatMini.bundle"
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -16,8 +19,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Logcat Mini</string>
 <key>CFBundleExecutable</key><string>LogcatMini</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.17.2</string>
-<key>CFBundleVersion</key><string>33</string>
+<key>CFBundleShortVersionString</key><string>0.20.1</string>
+<key>CFBundleVersion</key><string>37</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>

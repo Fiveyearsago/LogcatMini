@@ -255,7 +255,7 @@ import Darwin
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try output.write(to: url, atomically: true, encoding: .utf8) } catch { configurationError = error.localizedDescription }
     }
-    private static func lockProject(_ root: URL) throws -> Int32 {
+    static func lockProject(_ root: URL) throws -> Int32 {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Logcat Mini/BuildLocks")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let hash = SHA256.hash(data: Data(root.resolvingSymlinksInPath().path.utf8)).map { String(format: "%02x", $0) }.joined()

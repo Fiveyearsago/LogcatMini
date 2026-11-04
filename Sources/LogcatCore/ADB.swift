@@ -44,9 +44,6 @@ public final class LogStream {
     private let lock = NSLock()
     public init() {}
     public func start(path: String, serial: String, uid: String?, onLines: @escaping ([String]) -> Void, onExit: @escaping (String) -> Void) throws {
-        stop()
-        let child = Process(), output = Pipe(), errors = Pipe()
-        child.executableURL = URL(fileURLWithPath: path)
         // The device clock avoids importing old phone-buffer entries on each new session.
         // Only this fixed command and a validated numeric UID reach the device shell.
         if let uid, uid.isEmpty || !uid.utf8.allSatisfy({ (48...57).contains($0) }) { throw NSError(domain: "LogcatMini", code: 1, userInfo: [NSLocalizedDescriptionKey: "应用 UID 无效"]) }
@@ -54,12 +51,22 @@ public final class LogStream {
         if let uid { command += " --uid=" + uid }
         command += " '*:V'"
         let arguments = ["-s", serial, "shell", command]
+        try start(path: path, arguments: arguments, onLines: onLines, onExit: onExit)
+    }
+    /// Streams an owned child using literal arguments, also used by iOS log transports.
+    public func start(path: String, arguments: [String], onLines: @escaping ([String]) -> Void, onExit: @escaping (String) -> Void) throws {
+        stop()
+        let child = Process(), output = Pipe(), errors = Pipe()
+        child.executableURL = URL(fileURLWithPath: path)
         child.arguments = arguments; child.standardOutput = output; child.standardError = errors
+        child.standardInput = FileHandle.nullDevice
         try child.run()
         lock.lock(); process = child; lock.unlock()
         let errorCollector = ErrorCollector()
+        let errorRead = DispatchGroup(); errorRead.enter()
         DispatchQueue.global(qos: .utility).async {
             errorCollector.set(String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+            errorRead.leave()
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var framer = LineFramer()
@@ -71,6 +78,7 @@ public final class LogStream {
             }
             if let remaining = framer.finish() { onLines([remaining]) }
             child.waitUntilExit()
+            errorRead.wait()
             guard let self = self else { return }
             self.lock.lock()
             let active = self.process === child
