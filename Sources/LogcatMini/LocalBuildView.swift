@@ -89,7 +89,7 @@ struct LocalBuildView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(builds.busy ? "本次目标：\(builds.activeTarget?.name ?? "")" : "目标手机：\(model.device?.name ?? "未连接")")
                         .help(builds.activeTarget?.serial ?? model.selectedSerial)
-                    Text("运行当前已保存代码，覆盖安装并保留应用数据。").font(.caption).foregroundColor(palette.muted)
+                    Text("运行当前已保存代码；未安装时直接安装，已安装时保留应用数据。").font(.caption).foregroundColor(palette.muted)
                 }.font(.system(size: 12))
                 Spacer()
                 if builds.busy { ProgressView().controlSize(.small); Button("取消任务", action: builds.cancel) }
@@ -113,7 +113,6 @@ struct LocalBuildView: View {
             DetailTextView(text: builds.output, palette: palette, fontSize: appearance.fontSize, find: find, activate: {}, accessibilityLabel: "构建输出")
                 .frame(maxWidth: .infinity, maxHeight: .infinity).background(palette.field)
         }.padding(18).background(palette.canvas).foregroundColor(palette.text).tint(palette.accent)
-            .onAppear { if builds.draft.packageID.isEmpty && !model.selectedPackage.isEmpty { builds.edit(model.selectedPackage) } }
             .task(id: builds.draft.directory) { await builds.refreshBranch() }
             .onChange(of: scenePhase) { if $0 == .active { Task { await builds.refreshBranch() } } }
     }

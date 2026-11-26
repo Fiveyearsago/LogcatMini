@@ -16,7 +16,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard NSApp.modalWindow == nil else { return event }
             if event.window?.firstResponder is IOSSimulatorSurfaceView { return event }
-            let inLogs = event.window?.title == "Logcat Mini"
+            let inLogs = event.window?.title == "Logcat Mini" && self?.displayModel != nil
             if event.window?.title == "模拟接口请求", event.keyCode == 53,
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
                self?.replay?.responseFullscreen == true {
@@ -64,32 +64,44 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private enum MainTab {
+    case android, ios, bastion
+}
+
 @main struct LogcatMiniApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     @StateObject private var model = LogViewModel()
     @StateObject private var ios = IOSLogViewModel()
-    @State private var showingIOS = false
+    @StateObject private var bastion = BastionManager()
+    @State private var bastionSheet: BastionSheet?
+    @State private var selectedTab: MainTab = .android
     @StateObject private var appearance = AppearanceSettings()
     @StateObject private var replay = RequestReplayStore()
     @StateObject private var sDecrypt = LogSDecryptionStore()
-    private var logModel: LogViewModel { showingIOS ? ios.logs : model }
+    private var showingIOS: Bool { selectedTab == .ios }
+    private var logModel: LogViewModel? {
+        switch selectedTab {
+        case .android: return model
+        case .ios: return ios.logs
+        case .bastion: return nil
+        }
+    }
     private func toggleCapture() { if showingIOS { ios.toggleCapture() } else { model.toggleCapture() } }
     private func clearLogs() { if showingIOS { ios.clear() } else { model.clear() } }
     var body: some Scene {
-        WindowGroup("Logcat Mini") {
+        Window("Logcat Mini", id: "main") {
             VStack(spacing: 0) {
-                HStack {
-                    Picker("日志平台", selection: $showingIOS) {
-                        Text("Android").tag(false)
-                        Text("iOS · 真机 / 模拟器").tag(true)
-                    }.pickerStyle(.segmented).frame(width: 310)
-                    Spacer()
-                }.padding(.horizontal, 16).padding(.vertical, 8)
-                Divider()
-                if showingIOS {
+                WorkspaceTabBar(selectedTab: $selectedTab, appearance: appearance)
+                switch selectedTab {
+                case .android:
+                    ContentView(model: model, appearance: appearance, replay: replay, sDecrypt: sDecrypt) { favorite in
+                        bastionSheet = .app(favorite, focusAddress: true)
+                        selectedTab = .bastion
+                    }
+                case .ios:
                     IOSLogView(ios: ios, logs: ios.logs, appearance: appearance, replay: replay, sDecrypt: sDecrypt)
-                } else {
-                    ContentView(model: model, appearance: appearance, replay: replay, sDecrypt: sDecrypt)
+                case .bastion:
+                    BastionView(manager: bastion, appearance: appearance, sheet: $bastionSheet)
                 }
             }
                 .preferredColorScheme(appearance.theme.scheme)
@@ -99,7 +111,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                     delegate.model = model; delegate.displayModel = logModel; delegate.iosModel = ios
                     delegate.appearance = appearance; delegate.replay = replay; model.begin()
                 }
-                .onChange(of: showingIOS) { _ in delegate.displayModel = logModel; ios.previewActive = showingIOS }
+                .onChange(of: selectedTab) { _ in delegate.displayModel = logModel; ios.previewActive = showingIOS }
         }
         .defaultSize(width: 1380, height: 880)
         .commands {
@@ -108,14 +120,16 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             }
             CommandGroup(after: .toolbar) {
                 Divider()
-                Button(logModel.logFullscreen ? "恢复菜单" : "日志全屏", action: logModel.toggleLogFullscreen)
-                    .appShortcut(.listFullscreen)
-                Button(logModel.inspectorFullscreen ? "返回日志列表" : "日志详情全屏") { logModel.inspectorFullscreen.toggle() }
-                    .appShortcut(.detailFullscreen).disabled(logModel.selectedLog == nil)
-                Button((showingIOS ? ios.previewShown : model.mirrorShown) ? "收起手机投屏" : "手机投屏") {
-                    if showingIOS { ios.togglePreview() } else { model.toggleMirror() }
+                if let logModel {
+                    Button(logModel.logFullscreen ? "恢复菜单" : "日志全屏", action: logModel.toggleLogFullscreen)
+                        .appShortcut(.listFullscreen)
+                    Button(logModel.inspectorFullscreen ? "返回日志列表" : "日志详情全屏") { logModel.inspectorFullscreen.toggle() }
+                        .appShortcut(.detailFullscreen).disabled(logModel.selectedLog == nil)
+                    Button((showingIOS ? ios.previewShown : model.mirrorShown) ? "收起手机投屏" : "手机投屏") {
+                        if showingIOS { ios.togglePreview() } else { model.toggleMirror() }
+                    }
+                    Menu("显示列") { LogColumnMenuItems(appearance: appearance) }
                 }
-                Menu("显示列") { LogColumnMenuItems(appearance: appearance) }
                 Divider()
                 Button("放大文字", action: appearance.increase).keyboardShortcut("+", modifiers: [.command]).disabled(!appearance.canIncrease)
                 Button("缩小文字", action: appearance.decrease).keyboardShortcut("-", modifiers: [.command]).disabled(!appearance.canDecrease)
@@ -125,38 +139,47 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             CommandGroup(after: .textEditing) {
-                Button(logModel.detailFormatted ? "还原日志格式" : "格式化日志", action: logModel.toggleDetailFormatting)
-                    .appShortcut(.format).disabled(!logModel.canFormatDetail || logModel.selectedLog == nil)
-                Button("显示 / 隐藏当前查找") { logModel.toggleFind() }.appShortcut(.find)
-                Button("查找下一处") { logModel.currentFind.move(1) }.appShortcut(.next)
-                Button("查找上一处") { logModel.currentFind.move(-1) }.appShortcut(.previous)
-                Button("在日志列表中查找…") { logModel.inspectorFullscreen = false; logModel.openFind(.list) }
-                Button("在日志详情中查找…") { logModel.openFind(.detail) }.disabled(logModel.selectedLog == nil)
+                if let logModel {
+                    Button(logModel.detailFormatted ? "还原日志格式" : "格式化日志", action: logModel.toggleDetailFormatting)
+                        .appShortcut(.format).disabled(!logModel.canFormatDetail || logModel.selectedLog == nil)
+                    Button("显示 / 隐藏当前查找") { logModel.toggleFind() }.appShortcut(.find)
+                    Button("查找下一处") { logModel.currentFind.move(1) }.appShortcut(.next)
+                    Button("查找上一处") { logModel.currentFind.move(-1) }.appShortcut(.previous)
+                    Button("在日志列表中查找…") { logModel.inspectorFullscreen = false; logModel.openFind(.list) }
+                    Button("在日志详情中查找…") { logModel.openFind(.detail) }.disabled(logModel.selectedLog == nil)
+                }
             }
             CommandGroup(replacing: .newItem) {
+                OpenAppWindowButton(title: "应用与跳板机", id: "main") { selectedTab = .bastion }
                 OpenAppWindowButton(title: "模拟接口请求与历史…", id: "request-replay")
                 OpenAppWindowButton(title: "s 串解密…", id: "s-decryption")
-                OpenAppWindowButton(title: "本地项目与构建输出…", id: showingIOS ? "ios-build" : "local-build")
-                Divider()
-                if showingIOS { IOSMediaCaptureCommands(ios: ios, media: ios.media) }
-                else { MediaCaptureCommands(model: model, media: model.media) }
+                if logModel != nil {
+                    OpenAppWindowButton(title: "本地项目与构建输出…", id: showingIOS ? "ios-build" : "local-build")
+                    Divider()
+                    if showingIOS { IOSMediaCaptureCommands(ios: ios, media: ios.media) }
+                    else { MediaCaptureCommands(model: model, media: model.media) }
+                }
                 OpenAppWindowButton(title: "截图与录屏历史", id: "media-history").appShortcut(.history)
                 Divider()
-                Button("导出筛选日志…", action: logModel.export).appShortcut(.export)
-                Button("清空当前视图", action: clearLogs).appShortcut(.clear)
+                if let logModel {
+                    Button("导出筛选日志…", action: logModel.export).appShortcut(.export)
+                    Button("清空当前视图", action: clearLogs).appShortcut(.clear)
+                }
             }
             CommandMenu("日志") {
-                Button(logModel.running ? "停止采集" : "开始采集", action: toggleCapture)
-                    .appShortcut(.capture)
-                Button(logModel.paused ? "恢复滚动" : "暂停滚动", action: logModel.togglePause)
-                    .appShortcut(.pause).disabled(!logModel.running && !logModel.paused)
-                Button(logModel.isFollowing ? "停止跟随最新日志" : "跟随最新日志", action: logModel.toggleFollow).appShortcut(.follow)
-                Divider()
-                Button("刷新设备与应用") { Task {
-                    if showingIOS { await ios.refreshDevices(); await ios.refreshProcesses() }
-                    else { await model.refreshDevices(); await model.refreshPackages() }
-                } }
-                Button("选择 ADB…", action: model.chooseADB).disabled(showingIOS)
+                if let logModel {
+                    Button(logModel.running ? "停止采集" : "开始采集", action: toggleCapture)
+                        .appShortcut(.capture)
+                    Button(logModel.paused ? "恢复滚动" : "暂停滚动", action: logModel.togglePause)
+                        .appShortcut(.pause).disabled(!logModel.running && !logModel.paused)
+                    Button(logModel.isFollowing ? "停止跟随最新日志" : "跟随最新日志", action: logModel.toggleFollow).appShortcut(.follow)
+                    Divider()
+                    Button("刷新设备与应用") { Task {
+                        if showingIOS { await ios.refreshDevices(); await ios.refreshProcesses() }
+                        else { await model.refreshDevices(); await model.refreshPackages() }
+                    } }
+                    Button("选择 ADB…", action: model.chooseADB).disabled(showingIOS)
+                }
             }
             CommandGroup(replacing: .appInfo) {
                 Button("关于 Logcat Mini") {
@@ -172,6 +195,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             AppSettingsView(model: model, appearance: appearance, library: model.media.library)
                 .preferredColorScheme(appearance.theme.scheme).frame(minWidth: 600, minHeight: 600)
         }.defaultSize(width: 660, height: 760)
+        Window("日志合并规则", id: "log-merge-rules") {
+            LogMergeRulesView(settings: model.mergeSettings, appearance: appearance)
+                .preferredColorScheme(appearance.theme.scheme).frame(minWidth: 720, minHeight: 560)
+        }.defaultSize(width: 820, height: 740)
         Window("截图与录屏", id: "media-history") {
             MediaHistoryView(library: model.media.library, appearance: appearance)
                 .preferredColorScheme(appearance.theme.scheme).frame(minWidth: 850, minHeight: 580)
@@ -222,11 +249,38 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private struct WorkspaceTabBar: View {
+    @Binding var selectedTab: MainTab
+    @ObservedObject var appearance: AppearanceSettings
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = appearance.theme.palette(for: colorScheme)
+        Picker("工作区", selection: $selectedTab) {
+            Text("Android").tag(MainTab.android)
+            Text("iOS · 真机 / 模拟器").tag(MainTab.ios)
+            Text("应用与跳板机").tag(MainTab.bastion)
+        }
+        .pickerStyle(.segmented).labelsHidden().fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .foregroundColor(palette.text).tint(palette.accent)
+        .background(palette.panel)
+        .overlay(alignment: .bottom) { Divider().overlay(palette.line) }
+    }
+}
+
 private struct OpenAppWindowButton: View {
     let title: String
     let id: String
+    var beforeOpen: () -> Void = {}
     @Environment(\.openWindow) private var openWindow
-    var body: some View { Button(title) { openWindow(id: id) } }
+    var body: some View {
+        Button(title) {
+            beforeOpen()
+            openWindow(id: id)
+        }
+    }
 }
 
 private struct IOSMediaCaptureCommands: View {

@@ -1,4 +1,5 @@
 import XCTest
+import LogcatCore
 @testable import LogcatMini
 
 final class LocalBuildTests: XCTestCase {
@@ -84,6 +85,94 @@ final class LocalBuildTests: XCTestCase {
         XCTAssertEqual(LocalBuildController(defaults: isolated).project(for: project.packageID), project)
         controller.remove(project.packageID)
         XCTAssertTrue(LocalBuildController(defaults: isolated).projects.isEmpty)
+    }
+    @MainActor func testUninstalledProjectIsSelectedOnSaveAndRemainsDiscoverableAfterRestart() throws {
+        let (root, project) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "UninstalledProjectTests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = LogViewModel(defaults: defaults); defer { model.shutdown() }
+        model.adbPath = nil
+        model.activateDevice("phone")
+        model.devices = AndroidDevice.parse("phone device model:QA")
+        XCTAssertTrue(model.builds.save(project))
+        XCTAssertEqual(model.selectedPackage, project.packageID)
+        XCTAssertTrue(model.selectedPackageUnavailable)
+        XCTAssertFalse(model.canStart)
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.localBuildTarget, nil)
+        model.adbPath = project.sdkRoot + "/platform-tools/adb"
+        XCTAssertNotNil(model.localBuildTarget, "Installing a local project must not require an installed app")
+        XCTAssertEqual(model.matchingLocalProjects, [project])
+        model.appSearch = root.lastPathComponent
+        XCTAssertEqual(model.matchingLocalProjects, [project])
+        model.appSearch = "no-match"
+        XCTAssertTrue(model.matchingLocalProjects.isEmpty)
+        model.appSearch = ""
+        model.packages = AndroidPackage.parse("package:\(project.packageID) uid:10001")
+        XCTAssertFalse(model.selectedPackageUnavailable)
+        XCTAssertEqual(model.matchingLocalProjects, [project])
+        XCTAssertTrue(model.matchingApps.isEmpty, "An installed local project should not appear twice")
+        model.adbPath = nil
+        model.toggleFavorite(project.packageID)
+        XCTAssertTrue(model.matchingLocalProjects.isEmpty)
+        XCTAssertEqual(model.matchingFavoriteIDs, [project.packageID])
+        model.toggleFavorite(project.packageID)
+        let restored = LogViewModel(defaults: defaults); defer { restored.shutdown() }
+        restored.adbPath = nil
+        XCTAssertEqual(restored.matchingLocalProjects, [project])
+        XCTAssertEqual(restored.selectedPackage, project.packageID)
+        var invalid = project; invalid.packageID = "invalid"
+        XCTAssertFalse(model.builds.save(invalid))
+        XCTAssertEqual(model.selectedPackage, project.packageID)
+    }
+    @MainActor func testMissingFavoriteWaitsForFirstInstallationThenCapturesItsUID() async throws {
+        let (root, project) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "FirstInstallTests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let adb = root.appendingPathComponent("fake-adb")
+        let packageList = root.appendingPathComponent("packages")
+        try "".write(to: packageList, atomically: true, encoding: .utf8)
+        try #"""
+        #!/usr/bin/python3
+        import pathlib, sys, time, re
+        root = pathlib.Path(__file__).parent
+        args = sys.argv[1:]
+        if 'package' in args:
+            print((root/'packages').read_text())
+        elif args[-1].startswith('exec logcat '):
+            uid = re.search(r'--uid=(\d+)', args[-1])
+            (root/'capture').write_text(uid[1] if uid else 'all')
+            print('2026-11-18 10:00:00.001 123 123 I FirstInstall: launched', flush=True)
+            time.sleep(10)
+        """#.write(to: adb, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: adb.path)
+        let model = LogViewModel(defaults: defaults); defer { model.shutdown() }
+        model.adbPath = nil; model.activateDevice("phone")
+        model.devices = AndroidDevice.parse("phone device model:QA")
+        model.toggleFavorite(project.packageID)
+        model.adbPath = adb.path
+        model.selectPackage(project.packageID)
+        XCTAssertEqual(model.selectedPackage, project.packageID)
+        XCTAssertFalse(model.running)
+        await model.refreshPackages()
+        XCTAssertEqual(model.selectedPackage, project.packageID)
+        XCTAssertFalse(model.running)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("capture").path), "A missing package must never fall back to all-device logs")
+        XCTAssertTrue(model.builds.save(project))
+        try "package:\(project.packageID) uid:10234".write(to: packageList, atomically: true, encoding: .utf8)
+        await model.builds.onInstalled?(.init(adb: adb.path, serial: "other-phone", name: "Other"), project.packageID)
+        XCTAssertFalse(model.running, "Installing on another device must not change the current session")
+        await model.builds.onInstalled?(.init(adb: adb.path, serial: "phone", name: "QA"), project.packageID)
+        for _ in 0..<100 {
+            if (try? String(contentsOf: root.appendingPathComponent("capture"))) == "10234" { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("capture")), "10234")
+        XCTAssertTrue(model.running)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.selectedPackage, project.packageID)
     }
     @MainActor func testPipelineCapturesDeviceAndStartsOnlyAfterInstallCallback() async throws {
         let (root, project) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }

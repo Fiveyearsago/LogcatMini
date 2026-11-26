@@ -13,6 +13,7 @@ struct AppListRow: View {
     let subtitle: String
     let symbol: String
     let available: Bool
+    let addToBastion: ((BastionApp) -> Void)?
     private var palette: ThemePalette { appearance.theme.palette(for: colorScheme) }
 
     var body: some View {
@@ -33,12 +34,15 @@ struct AppListRow: View {
                         Text(displayTitle).font(.system(size: appearance.uiSize(12), weight: model.selectedPackage == id ? .semibold : .regular)).lineLimit(1)
                         Text(subtitle).font(.system(size: appearance.uiSize(9), design: .monospaced)).foregroundColor(palette.muted).lineLimit(1).truncationMode(.middle)
                         if !available {
-                            Text("当前设备未列出").font(.system(size: appearance.uiSize(9))).foregroundColor(palette.muted)
+                            Text(builds.project(for: id) == nil ? "当前设备未列出 · 可关联项目" : "当前设备未列出 · 可编译安装")
+                                .font(.system(size: appearance.uiSize(9))).foregroundColor(palette.muted)
                         }
                     }
                     Spacer(minLength: 0)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10).contentShape(Rectangle())
-            }.disabled(!available).help(displayTitle + "\n" + subtitle + (available ? "" : "\n请检查设备、应用安装情况或开启「显示系统应用」"))
+            }.help(displayTitle + "\n" + subtitle + (available ? "" : "\n可选中并关联本地项目，编译安装后自动采集日志。"))
+                .accessibilityLabel("选择应用 " + (id.isEmpty ? "全部应用" : id))
+                .accessibilityValue(model.selectedPackage == id ? "已选中" : "未选中")
             if !id.isEmpty {
                 Button { model.toggleFavorite(id) } label: {
                     Image(systemName: isFavorite ? "star.fill" : "star")
@@ -54,6 +58,12 @@ struct AppListRow: View {
             .padding(.horizontal, 12)
             .contextMenu {
                 if !id.isEmpty {
+                    if let addToBastion {
+                        Button("添加到跳板机…") {
+                            addToBastion(BastionApp(name: displayTitle, packageName: id, icon: model.favoriteMetadata[id]?.iconPNG))
+                        }
+                        Divider()
+                    }
                     Button("关联 / 配置本地项目…") { builds.edit(id); openWindow(id: "local-build") }
                     if let project = builds.project(for: id) {
                         Button("编译并运行到当前手机") {

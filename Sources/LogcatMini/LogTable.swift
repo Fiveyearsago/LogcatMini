@@ -364,7 +364,7 @@ struct LogTable: NSViewRepresentable {
             cell.identifier = column.identifier
             guard let text = cell.textField else { return cell }
             if key == "message" {
-                let identity = "\(entry.id):\(entry.mergedParts)"
+                let identity = "\(entry.id):\(entry.mergedParts):\(entry.message.hashValue)"
                 let cacheKey = identity as NSString
                 let rendered: NSAttributedString
                 if let cached = highlightCache.object(forKey: cacheKey) { rendered = cached }

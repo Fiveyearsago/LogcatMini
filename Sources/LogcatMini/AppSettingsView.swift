@@ -16,6 +16,12 @@ struct AppSettingsView: View {
                     Text("设置").font(.title2.bold())
                     Text("调整阅读体验和文件保存位置").foregroundColor(palette.muted)
                 }
+                settingsCard("日志合并", symbol: "rectangle.compress.vertical") {
+                    Text("自动合并完整分段；Android 和 iOS 共用。新增格式可在这里添加模板、预览结果和管理规则。")
+                        .font(.caption).foregroundColor(palette.muted)
+                    Button("管理日志合并规则…") { openWindow(id: "log-merge-rules") }
+                    if model.rebuildingMergeRules { Text("正在重新合并缓存日志…").font(.caption) }
+                }
                 settingsCard("本地项目", symbol: "hammer") {
                     Text("关联 Android 源码目录，编译、安装并运行到当前手机。配置仅保存在这台 Mac 上。")
                         .font(.caption).foregroundColor(palette.muted)

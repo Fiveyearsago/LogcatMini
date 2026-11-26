@@ -26,6 +26,9 @@ public struct LogEntry: Identifiable, Equatable {
     public var message: String
     public var raw: String
     public var sourceIDs: [UInt64] = []
+    // Retain original records only for merged rows, so editing rules can undo and rebuild safely.
+    var originalParts: [LogEntry]?
+    public var sourceWasTruncated: Bool { raw.contains("<…>") }
     public var mergedParts: Int { max(1, sourceIDs.count) }
     /// A merged group is one logical record in the inspector, clipboard and export.
     public var fullText: String {
@@ -40,7 +43,7 @@ public struct LogEntry: Identifiable, Equatable {
 }
 
 public struct LogParser {
-    private static let pattern = try! NSRegularExpression(pattern: #"^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}\.\d+)\s+(\d+)\s+(\d+)\s+([VDIWEFA])\s+(.+?)\s*:\s?(.*)$"#)
+    private static let pattern = try! NSRegularExpression(pattern: #"^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}\.\d+(?:[+-]\d{4})?)\s+(\d+)\s+(\d+)\s+([VDIWEFA])\s+(.+?)\s*:\s?(.*)$"#)
     public static func parse(_ line: String, id: UInt64) -> LogEntry? {
         let range = NSRange(line.startIndex..., in: line)
         guard let match = pattern.firstMatch(in: line, range: range) else { return nil }
@@ -145,13 +148,29 @@ public struct LogBuffer {
     public private(set) var entries: [LogEntry] = []
     public private(set) var evicted = 0
     public let limit: Int?
-    public init(limit: Int? = nil) { self.limit = limit.map { max(1, $0) } }
+    public private(set) var mergeRules: [LogMergeRule]
+    private var compiledRules: [CompiledLogMergeRule]
+    private let includesBuiltInRules: Bool
+    public init(limit: Int? = nil, mergeRules: [LogMergeRule] = [], includesBuiltInRules: Bool = true) {
+        self.includesBuiltInRules = includesBuiltInRules
+        self.limit = limit.map { max(1, $0) }; self.mergeRules = mergeRules
+        compiledRules = mergeRules.prefix(32).filter(\.enabled).compactMap { try? CompiledLogMergeRule($0) }
+    }
+    public mutating func setMergeRules(_ rules: [LogMergeRule], shouldCancel: () -> Bool = { false }) {
+        let previous = entries
+        entries = []; mergeRules = rules
+        compiledRules = rules.prefix(32).filter(\.enabled).compactMap { try? CompiledLogMergeRule($0) }
+        for entry in previous {
+            if shouldCancel() { return }
+            append(entry.originalParts ?? [entry])
+        }
+    }
     /// The unchanged prefix survives appends and cross-batch chunk merges.
     @discardableResult public mutating func append(_ batch: [LogEntry]) -> Int {
         var changedFrom = entries.count
         for entry in batch {
             entries.append(entry)
-            LogChunkMerger.mergeTail(&entries)
+            LogChunkMerger.mergeTail(&entries, rules: compiledRules, includesBuiltInRules: includesBuiltInRules)
             changedFrom = min(changedFrom, entries.count - 1)
         }
         if let limit, entries.count > limit {

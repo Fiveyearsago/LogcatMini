@@ -17,12 +17,15 @@ mkdir -p "$STAGE"
 ditto 'dist/Logcat Mini.app' "$APP"
 cp "$PRODUCTS/LogcatMini" "$APP/Contents/MacOS/LogcatMini"
 cp "$PRODUCTS/IOSSimulatorBridge" "$APP/Contents/MacOS/IOSSimulatorBridge"
+CONNECTOR="$APP/Contents/Helpers/Logcat Mini 跳板机连接.app"
+cp "$PRODUCTS/BastionConnector" "$CONNECTOR/Contents/MacOS/BastionConnector"
+codesign --force --sign - "$CONNECTOR"
 rm -rf "$APP/Contents/Resources/LogcatMini_LogcatMini.bundle"
 ditto "$PRODUCTS/LogcatMini_LogcatMini.bundle" "$APP/Contents/Resources/LogcatMini_LogcatMini.bundle"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
-for BINARY in LogcatMini IOSSimulatorBridge; do
-    BINARY_ARCHITECTURES=$(lipo -archs "$APP/Contents/MacOS/$BINARY")
+for BINARY in "$APP/Contents/MacOS/LogcatMini" "$APP/Contents/MacOS/IOSSimulatorBridge" "$CONNECTOR/Contents/MacOS/BastionConnector"; do
+    BINARY_ARCHITECTURES=$(lipo -archs "$BINARY")
     for REQUIRED_ARCH in arm64 x86_64; do
         if [[ " $BINARY_ARCHITECTURES " != *" $REQUIRED_ARCH "* ]]; then
             printf 'Missing required architecture in %s: %s\n' "$BINARY" "$REQUIRED_ARCH" >&2

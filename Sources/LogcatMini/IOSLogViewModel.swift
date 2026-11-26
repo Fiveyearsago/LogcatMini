@@ -8,6 +8,7 @@ import LogcatCore
     let media = IOSMediaController()
     let preview = IOSPreviewController()
     let builds: IOSBuildController
+    let idfa: IOSIDFAController
     private let defaults: UserDefaults
     @Published var previewShown = false
     var previewActive = true
@@ -40,6 +41,7 @@ import LogcatCore
         self.defaults = defaults
         logs = LogViewModel(defaults: defaults)
         builds = IOSBuildController(defaults: defaults)
+        idfa = IOSIDFAController(defaults: defaults)
         favoriteApps = defaults.data(forKey: "ios.favoriteMetadata").flatMap { try? JSONDecoder().decode([IOSLogProcess].self, from: $0) } ?? []
         includeSystem = defaults.bool(forKey: "ios.includeSystem")
         logs.adbPath = nil
@@ -94,6 +96,7 @@ import LogcatCore
     }
     func showDeviceInfo() {
         guard let device else { return }; infoShown = true; infoText = ""; infoLoading = true
+        idfa.select(device)
         Task {
             do { let text = try await IOSDeviceService.deviceInfo(device); guard self.device?.id == device.id else { return }; infoText = text }
             catch { guard self.device?.id == device.id else { return }; infoText = error.localizedDescription }
@@ -124,7 +127,7 @@ import LogcatCore
         Task { await refreshDevices() }
     }
     func shutdown() {
-        iconTask?.cancel(); preview.stop()
+        iconTask?.cancel(); preview.stop(); idfa.cancel()
         stop(); timer?.invalidate(); pollTimer?.invalidate(); timer = nil; pollTimer = nil; began = false
         logs.shutdown()
     }
@@ -146,6 +149,7 @@ import LogcatCore
         updated.sort { $0.id < $1.id }
         let wasPresent = device != nil
         if devices != updated { devices = updated }
+        idfa.select(device)
         let notice = [simulators.notice, usb.notice].compactMap { $0 }.joined(separator: "\n")
         if discoveryNotice != (notice.isEmpty ? nil : notice) { discoveryNotice = notice.isEmpty ? nil : notice }
         if device == nil { preview.stop() }
@@ -179,6 +183,7 @@ import LogcatCore
         stop(); logs.activateDevice(id); processInput = logs.selectedPackage
         defaults.set(id, forKey: "selectedSerial")
         icons = [:]; iconTask?.cancel(); infoShown = false; infoLoading = false
+        idfa.select(device)
         preview.stop(); if previewShown, let device { preview.connect(device) }
         processes = []; processRequest = UUID(); loadingProcesses = false
         await refreshProcesses()

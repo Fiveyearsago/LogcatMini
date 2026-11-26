@@ -20,6 +20,7 @@ import Darwin
     @Published private(set) var activePackage = ""
     @Published private(set) var installed = false
     @Published var configurationError: String?
+    var onSaved: ((String) -> Void)?
     var onInstalled: ((Target, String) async -> Void)?
     var installationAllowed: () -> Bool = { true }
     private let defaults: UserDefaults
@@ -62,7 +63,9 @@ import Darwin
             projects.removeAll { $0.packageID == project.packageID }; projects.append(project)
             projects.sort { $0.packageID < $1.packageID }
             defaults.set(try JSONEncoder().encode(projects), forKey: Self.key)
-            draft = project; configurationError = nil; return true
+            draft = project; configurationError = nil
+            onSaved?(project.packageID)
+            return true
         } catch { configurationError = error.localizedDescription; return false }
     }
     func remove(_ package: String) {

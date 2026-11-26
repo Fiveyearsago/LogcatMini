@@ -108,17 +108,36 @@ struct DeviceInfoService {
 
     /// Opens the OS-controlled reset/delete UI. Never changes identifiers or clears Play services data.
     func openAdvertisingSettings() async throws {
-        try Task.checkCancellation()
-        let resolution = try await run(["shell", "cmd", "package", "resolve-activity", "--brief", "--user", "current",
-                                        "-a", "com.google.android.gms.settings.ADS_PRIVACY", "-p", "com.google.android.gms"], 8)
-        guard resolution.components(separatedBy: .newlines).contains(where: { $0.hasPrefix("com.google.android.gms/") }) else {
-            throw MirrorError.message("这台手机未提供 Google 广告 ID 设置入口。请在手机「设置 → Google → 所有服务 → 广告」中查看。")
+        // Recent Play services retain ADS_PRIVACY, but its legacy page can draw the
+        // reset row behind the status bar on OnePlus. Prefer the current settings UI.
+        let actions = ["com.google.android.gms.adsidentity.ACTION_ADS_IDENTITY_SETTINGS",
+                       "com.google.android.gms.settings.ADS_PRIVACY"]
+        var launchError: Error?
+        for action in actions {
+            try Task.checkCancellation()
+            let resolution = try await run(["shell", "cmd", "package", "resolve-activity", "--brief", "--user", "current",
+                                            "-a", action, "-p", "com.google.android.gms"], 8)
+            try Task.checkCancellation()
+            guard resolution.components(separatedBy: .newlines).contains(where: { $0.hasPrefix("com.google.android.gms/") }) else {
+                continue
+            }
+            do {
+                let output = try await run(["shell", "am", "start", "--user", "current", "-a", action,
+                                            "-p", "com.google.android.gms"], 8)
+                try Task.checkCancellation()
+                guard !output.localizedCaseInsensitiveContains("error"), !output.localizedCaseInsensitiveContains("exception"),
+                      !output.localizedCaseInsensitiveContains("permission denial") else {
+                    throw MirrorError.message("无法打开广告 ID 设置：\(output)")
+                }
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                launchError = error
+            }
         }
-        try Task.checkCancellation()
-        let output = try await run(["shell", "am", "start", "--user", "current", "-a", "com.google.android.gms.settings.ADS_PRIVACY",
-                                    "-p", "com.google.android.gms"], 8)
-        guard !output.localizedCaseInsensitiveContains("error"), !output.contains("Exception") else {
-            throw MirrorError.message("无法打开广告 ID 设置：\(output)")
-        }
+        if let launchError { throw launchError }
+        throw MirrorError.message("这台手机未提供 Google 广告 ID 设置入口。请在手机「设置 → Google → 所有服务 → 广告」中查看。")
     }
 }

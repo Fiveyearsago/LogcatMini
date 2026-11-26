@@ -4,7 +4,7 @@
 
 首次点击「读取 GAID」才会安装；已安装当前版本时复用。安装失败不会卸载已有应用，也不会尝试绕过手机的安装限制。可以在手机应用设置卸载「Logcat Mini 设备信息」，下次读取时会重新安装。
 
-GAID 重置不在助手中执行。Mac 通过 Google Play 服务提供的 `com.google.android.gms.settings.ADS_PRIVACY` Activity 入口打开设置，由用户确认。没有使用 root、修改私有文件或清空 Google Play 服务数据。
+GAID 重置不在助手中执行。Mac 优先通过 Google Play 服务的 `com.google.android.gms.adsidentity.ACTION_ADS_IDENTITY_SETTINGS` 入口打开设置；新版入口不存在或启动失败时，回退到旧版 `com.google.android.gms.settings.ADS_PRIVACY`。旧版页面在部分一加系统上会将重置行遮挡在状态栏下，因此不能只以旧入口可解析作为优先使用的依据。重置由用户在手机上确认，没有使用 root、修改私有文件或清空 Google Play 服务数据。
 
 在项目根目录构建（JDK 17、Android SDK 35、Gradle 8.13 或更新的兼容版本）：
 

@@ -56,7 +56,7 @@ struct LogInspector: View {
     @State private var expanded = Set<Int>()
     @State private var jsonLayout: LogJSONTextLayout?
     @State private var parsedEntryID: String?
-    private var contentID: String { "\(entry.id):\(entry.mergedParts)" }
+    private var contentID: String { "\(entry.id):\(entry.mergedParts):\(entry.message.hashValue)" }
     private var currentFormatted: LogFormattedDocument? { parsedEntryID == contentID ? formattedDocument : nil }
     private var currentDocument: LogJSONDocument? { currentFormatted?.json }
     private var visibleText: String { showFormatted ? currentFormatted?.text ?? entry.fullText : entry.fullText }
@@ -101,6 +101,10 @@ struct LogInspector: View {
                 Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("关闭日志详情")
               }
             }.buttonStyle(.borderless).font(.system(size: appearance.uiSize(11)))
+            if entry.sourceWasTruncated {
+                Text("原始日志含 <…> 截断标记，合并保留现有内容，无法恢复缺失的正文。")
+                    .font(.system(size: appearance.uiSize(11))).foregroundColor(palette.warning)
+            }
             if find.shown { LogFindBar(find: find, title: "在日志详情中查找", palette: palette, activate: activate) }
             if showFormatted, let document = currentDocument {
                 jsonContent(document)

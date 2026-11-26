@@ -71,20 +71,76 @@ final class DeviceInfoTests: XCTestCase {
         XCTAssertEqual(failedCalls, 3)
     }
 
-    func testResetEntryOnlyOpensResolvedGoogleSettingsAndDoesNotMutateIDs() async throws {
+    func testResetEntryPrefersModernGoogleSettingsAndDoesNotMutateIDs() async throws {
         var calls: [[String]] = []
         let service = DeviceInfoService { arguments, _ in
             calls.append(arguments)
-            return calls.count == 1 ? "com.google.android.gms/.adid.settings.AdsSettingsActivity" : "Starting: Intent"
+            return calls.count == 1 ? "com.google.android.gms/.adsidentity.settings.AdsIdentitySettingsActivity" : "Starting: Intent"
         }
         try await service.openAdvertisingSettings()
         XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls.first, ["shell", "cmd", "package", "resolve-activity", "--brief", "--user", "current", "-a",
+                                    "com.google.android.gms.adsidentity.ACTION_ADS_IDENTITY_SETTINGS", "-p", "com.google.android.gms"])
+        XCTAssertEqual(calls.last, ["shell", "am", "start", "--user", "current", "-a",
+                                   "com.google.android.gms.adsidentity.ACTION_ADS_IDENTITY_SETTINGS", "-p", "com.google.android.gms"])
+    }
+
+    func testResetEntryFallsBackWhenModernSettingsAreUnavailable() async throws {
+        var calls: [[String]] = []
+        let service = DeviceInfoService { arguments, _ in
+            calls.append(arguments)
+            if calls.count == 1 { return "No activity found" }
+            return arguments.contains("resolve-activity") ? "com.google.android.gms/.adid.settings.AdsSettingsActivity" : "Starting: Intent"
+        }
+        try await service.openAdvertisingSettings()
+        XCTAssertEqual(calls.count, 3)
         XCTAssertEqual(calls.last, ["shell", "am", "start", "--user", "current", "-a",
                                    "com.google.android.gms.settings.ADS_PRIVACY", "-p", "com.google.android.gms"])
+    }
+
+    func testResetEntryFallsBackWhenModernLaunchIsRejected() async throws {
+        for throwsError in [false, true] {
+            var calls: [[String]] = []
+            let service = DeviceInfoService { arguments, _ in
+                calls.append(arguments)
+                if arguments.contains("resolve-activity") { return "com.google.android.gms/.SettingsActivity" }
+                if arguments.contains("com.google.android.gms.adsidentity.ACTION_ADS_IDENTITY_SETTINGS") {
+                    if throwsError { throw MirrorError.message("Permission Denial") }
+                    return "Error: Activity not started"
+                }
+                return "Starting: Intent"
+            }
+            try await service.openAdvertisingSettings()
+            XCTAssertEqual(calls.count, 4)
+            XCTAssertEqual(calls.last, ["shell", "am", "start", "--user", "current", "-a",
+                                       "com.google.android.gms.settings.ADS_PRIVACY", "-p", "com.google.android.gms"])
+        }
+    }
+
+    func testResetEntryReportsUnavailableOrFailedLaunch() async throws {
         var unavailableCalls = 0
         let unavailable = DeviceInfoService { _, _ in unavailableCalls += 1; return "No activity found" }
-        do { try await unavailable.openAdvertisingSettings(); XCTFail("Expected missing settings") } catch { }
-        XCTAssertEqual(unavailableCalls, 1)
+        do { try await unavailable.openAdvertisingSettings(); XCTFail("Expected missing settings") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("未提供")) }
+        XCTAssertEqual(unavailableCalls, 2)
+
+        let denied = DeviceInfoService { arguments, _ in
+            arguments.contains("resolve-activity") ? "com.google.android.gms/.SettingsActivity" : "Permission Denial: not exported"
+        }
+        do { try await denied.openAdvertisingSettings(); XCTFail("Expected denied settings") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("Permission Denial")) }
+    }
+
+    func testCancelledSettingsLaunchDoesNotTryLegacyEntry() async throws {
+        var calls = 0
+        let service = DeviceInfoService { arguments, _ in
+            calls += 1
+            if arguments.contains("resolve-activity") { return "com.google.android.gms/.SettingsActivity" }
+            throw CancellationError()
+        }
+        do { try await service.openAdvertisingSettings(); XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+        XCTAssertEqual(calls, 2)
     }
 
     func testCancelledReadDoesNotInstallOrLaunchHelper() async throws {
@@ -109,5 +165,13 @@ final class DeviceInfoTests: XCTestCase {
         let result = try await service.readAdvertisingID(helper: helper)
         XCTAssertTrue(["available", "zero"].contains(result.status), result.explanation)
         XCTAssertEqual(result.permissionGranted, true)
+    }
+
+    func testOptInPhysicalDeviceAdvertisingSettings() async throws {
+        guard let serial = ProcessInfo.processInfo.environment["LOGCAT_MINI_AD_SETTINGS_QA"], let path = ADB.locate() else {
+            throw XCTSkip("Set LOGCAT_MINI_AD_SETTINGS_QA to open settings on an authorized device without resetting its ID")
+        }
+        let service = DeviceInfoService(target: DeviceInfoTarget(path: path, serial: serial, name: "QA"))
+        try await service.openAdvertisingSettings()
     }
 }

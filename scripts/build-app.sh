@@ -7,6 +7,12 @@ APP_DIR="$PROJECT_DIR/dist/Logcat Mini.app"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp .build/release/LogcatMini "$APP_DIR/Contents/MacOS/LogcatMini"
 cp .build/release/IOSSimulatorBridge "$APP_DIR/Contents/MacOS/IOSSimulatorBridge"
+# Keep this helper's bundle and signature independent of the main app's build date.
+HELPER="$APP_DIR/Contents/Helpers/Logcat Mini 跳板机连接.app"
+mkdir -p "$HELPER/Contents/MacOS"
+cp .build/release/BastionConnector "$HELPER/Contents/MacOS/BastionConnector"
+cp scripts/BastionConnector-Info.plist "$HELPER/Contents/Info.plist"
+codesign --force --sign - "$HELPER"
 mkdir -p "$APP_DIR/Contents/Resources/Licenses"
 cp docs/licenses/idb.txt "$APP_DIR/Contents/Resources/Licenses/idb.txt"
 ditto .build/release/LogcatMini_LogcatMini.bundle "$APP_DIR/Contents/Resources/LogcatMini_LogcatMini.bundle"
@@ -19,8 +25,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Logcat Mini</string>
 <key>CFBundleExecutable</key><string>LogcatMini</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.20.1</string>
-<key>CFBundleVersion</key><string>37</string>
+<key>CFBundleShortVersionString</key><string>0.22.1</string>
+<key>CFBundleVersion</key><string>40</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>

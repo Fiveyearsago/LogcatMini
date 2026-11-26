@@ -18,7 +18,7 @@ struct IOSLogView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openWindow) private var openWindow
     private var palette: ThemePalette { appearance.theme.palette(for: colorScheme) }
-    private var filterKey: String { "\(logs.selectedSerial)\u{0}\(logs.selectedPackage)\u{0}\(logs.query)\u{0}\(logs.tag)\u{0}\(logs.minimum)\u{0}\(logs.regex)" }
+    private var filterKey: String { "\(logs.selectedSerial)\u{0}\(logs.selectedPackage)\u{0}\(logs.query)\u{0}\(logs.tag)\u{0}\(logs.minimum)\u{0}\(logs.regex)\u{0}\(logs.mergeRevision)" }
     init(ios: IOSLogViewModel, logs: LogViewModel, appearance: AppearanceSettings, replay: RequestReplayStore, sDecrypt: LogSDecryptionStore) {
         self.ios = ios; self.logs = logs; self.appearance = appearance; self.replay = replay; self.sDecrypt = sDecrypt
         self.media = ios.media; self.builds = ios.builds
@@ -61,16 +61,7 @@ struct IOSLogView: View {
         .onAppear { ios.previewActive = true; ios.begin(); if ios.previewShown, let device = ios.device { ios.preview.connect(device) } }
         .onDisappear { ios.previewActive = false; logs.rememberFilter(); ios.preview.stop() }
         .sheet(isPresented: $ios.infoShown) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack { Text("设备信息").font(.title2.bold()); Spacer(); Button("关闭") { ios.infoShown = false } }
-                Text(ios.device?.title ?? "设备已断开").foregroundStyle(.secondary)
-                if ios.infoLoading { ProgressView() }
-                ScrollView { Text(ios.infoText).font(.system(size: appearance.uiSize(12), design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                HStack {
-                    Button("复制") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(ios.infoText, forType: .string) }.disabled(ios.infoLoading)
-                    Button("刷新", action: ios.showDeviceInfo).disabled(ios.infoLoading)
-                }
-            }.padding(20).frame(width: 680, height: 560)
+            IOSDeviceInfoView(ios: ios, idfa: ios.idfa)
         }
     }
     private var sidebar: some View {

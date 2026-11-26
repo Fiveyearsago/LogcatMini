@@ -9,14 +9,19 @@ struct ContentView: View {
     @ObservedObject private var media: DeviceMediaController
     @ObservedObject private var library: MediaLibrary
     @ObservedObject private var mirror: DeviceMirrorController
+    @ObservedObject private var builds: LocalBuildController
     @StateObject private var companion = CatCompanion()
-    init(model: LogViewModel, appearance: AppearanceSettings, replay: RequestReplayStore, sDecrypt: LogSDecryptionStore) {
+    let addFavoriteToBastion: (BastionApp) -> Void
+    init(model: LogViewModel, appearance: AppearanceSettings, replay: RequestReplayStore, sDecrypt: LogSDecryptionStore,
+         addFavoriteToBastion: @escaping (BastionApp) -> Void) {
+        self.addFavoriteToBastion = addFavoriteToBastion
         self.model = model; self.appearance = appearance; self.media = model.media; self.library = model.media.library
-        self.replay = replay; self.sDecrypt = sDecrypt; self.mirror = model.mirror
+        self.replay = replay; self.sDecrypt = sDecrypt; self.mirror = model.mirror; self.builds = model.builds
     }
     @AppStorage("layout.sidebarWidth") private var sidebarWidth = 274.0
     @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
     @AppStorage("sidebar.otherAppsExpanded") private var otherAppsExpanded = true
+    @AppStorage("sidebar.localProjectsExpanded") private var localProjectsExpanded = true
     @State private var inspectorHeight: CGFloat = 220
     @AppStorage("layout.mirrorWidth") private var mirrorWidth = 330.0
     @Environment(\.colorScheme) private var colorScheme
@@ -52,7 +57,7 @@ struct ContentView: View {
                                 .frame(height: model.inspectorFullscreen ? 0 : nil).clipped()
                                 .accessibilityHidden(model.inspectorFullscreen)
                             ZStack {
-                                LogTable(entries: model.visible, revision: model.revision, palette: palette, fontSize: appearance.fontSize, visibleColumns: appearance.columns.visibleColumns, filterKey: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.minimum.rawValue)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.regex)", follow: $model.follow, selected: $model.selectedLog, find: model.listFind, activate: { model.activeFindPane = .list }, didCopy: { meetCat(.copied) })
+                                LogTable(entries: model.visible, revision: model.revision, palette: palette, fontSize: appearance.fontSize, visibleColumns: appearance.columns.visibleColumns, filterKey: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.minimum.rawValue)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.regex)\u{0}\(model.mergeRevision)", follow: $model.follow, selected: $model.selectedLog, find: model.listFind, activate: { model.activeFindPane = .list }, didCopy: { meetCat(.copied) })
                                 if model.visible.isEmpty {
                                     VStack(spacing: 13) {
                                         Image(systemName: model.device == nil ? "cable.connector" : "text.alignleft").font(.system(size: appearance.uiSize(32), weight: .light)).foregroundColor(palette.accent)
@@ -111,7 +116,7 @@ struct ContentView: View {
         .onChange(of: model.completedCaptureCount) { _ in
             if model.totalCount >= 10 { meetCat(.finishedCapture) }
         }
-        .task(id: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.minimum.rawValue)\u{0}\(model.regex)") {
+        .task(id: "\(model.selectedSerial)\u{0}\(model.selectedPackage)\u{0}\(model.query)\u{0}\(model.tag)\u{0}\(model.minimum.rawValue)\u{0}\(model.regex)\u{0}\(model.mergeRevision)") {
             guard !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                     !model.tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             // Wait for typing and the existing filter debounce, without watching log traffic.
@@ -140,12 +145,18 @@ struct ContentView: View {
         if model.adbPath == nil { return "连接你的 Android 工作流" }
         if model.devices.isEmpty { return "等待手机连接" }
         if model.device?.state == "unauthorized" { return "请在手机上允许 USB 调试" }
+        if model.selectedPackageUnavailable { return "等待安装应用" }
         if !model.query.isEmpty || !model.tag.isEmpty || model.minimum != .verbose { return "没有匹配的日志" }
         return model.running ? "正在等待日志" : "准备好开始了"
     }
     private var emptyHint: String {
         if model.adbPath == nil { return "选择已安装的 ADB，然后连接手机。所有日志都保留在本机。" }
         if model.devices.isEmpty { return "通过 USB 连接手机，打开开发者选项中的 USB 调试，并允许这台 Mac。也支持已配对的无线 ADB 设备。" }
+        if model.selectedPackageUnavailable {
+            return builds.project(for: model.selectedPackage) == nil
+                ? "当前设备尚未列出此应用。点击「关联本地项目」，选择项目后编译并运行；安装完成后自动采集日志。"
+                : "点击「编译并运行」将本地项目安装到当前手机，安装完成后自动采集日志。"
+        }
         if !model.query.isEmpty || !model.tag.isEmpty || model.minimum != .verbose { return "尝试调整等级、Tag 或搜索关键词。" }
         return model.running ? "在手机上操作所选 App，日志会实时出现在这里。" : "选择设备和应用，点击右上角「开始采集」。"
     }
@@ -194,10 +205,13 @@ struct ContentView: View {
                 Spacer()
                 if model.loadingApps { ProgressView().controlSize(.small).scaleEffect(0.65) }
                 else { Text("\(model.packages.count)").font(.system(size: appearance.uiSize(11), design: .monospaced)).foregroundColor(palette.muted) }
+                Button { builds.edit(""); openWindow(id: "local-build") } label: { Image(systemName: "plus") }
+                    .buttonStyle(.plain).foregroundColor(palette.muted).disabled(builds.busy || builds.detecting)
+                    .help("关联本地项目，无需先在手机上安装应用").accessibilityLabel("关联新的本地项目")
             }.padding(.horizontal, 20)
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundColor(palette.muted)
-                TextField("搜索包名或收藏名称", text: $model.appSearch).textFieldStyle(.plain).font(.system(size: appearance.uiSize(12)))
+                TextField("搜索包名、收藏或项目", text: $model.appSearch).textFieldStyle(.plain).font(.system(size: appearance.uiSize(12)))
                 if !model.appSearch.isEmpty { Button { model.appSearch = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundColor(palette.muted) }
             }.padding(9).background(palette.field).cornerRadius(6).padding(.horizontal, 16).padding(.vertical, 12)
             appRow(id: "", title: "全部应用", subtitle: "查看设备的所有日志", symbol: "square.grid.2x2")
@@ -224,7 +238,25 @@ struct ContentView: View {
                         }
                         ForEach(model.matchingFavoriteIDs, id: \.self) { packageID in
                             let listed = model.isPackageListed(packageID)
-                            appRow(id: packageID, title: packageID.split(separator: ".").suffix(2).joined(separator: "."), subtitle: packageID, symbol: "app.dashed", available: listed)
+                            appRow(id: packageID, title: packageID.split(separator: ".").suffix(2).joined(separator: "."), subtitle: packageID, symbol: "app.dashed", available: listed, addToBastion: addFavoriteToBastion)
+                        }
+                    }
+                    if !builds.projects.isEmpty {
+                        Button { localProjectsExpanded.toggle() } label: {
+                            HStack {
+                                Image(systemName: localProjectsExpanded ? "chevron.down" : "chevron.right").frame(width: 10)
+                                Label("本地项目", systemImage: "hammer")
+                                Spacer()
+                                Text("\(model.matchingLocalProjects.count)")
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel(localProjectsExpanded ? "折叠本地项目" : "展开本地项目")
+                            .font(.system(size: appearance.uiSize(11), weight: .semibold)).foregroundColor(palette.muted)
+                            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 5)
+                        if localProjectsExpanded {
+                            ForEach(model.matchingLocalProjects) { project in
+                                appRow(id: project.packageID, title: project.root.lastPathComponent, subtitle: project.packageID,
+                                       symbol: "hammer", available: model.isPackageListed(project.packageID))
+                            }
                         }
                     }
                     Button { otherAppsExpanded.toggle() } label: {
@@ -267,8 +299,9 @@ struct ContentView: View {
         }.background(palette.panel)
     }
     private func sectionLabel(_ title: String) -> some View { Text(title).font(.system(size: appearance.uiSize(11), weight: .semibold)).foregroundColor(palette.muted) }
-    private func appRow(id: String, title: String, subtitle: String, symbol: String, available: Bool = true) -> some View {
-        AppListRow(model: model, builds: model.builds, appearance: appearance, id: id, title: title, subtitle: subtitle, symbol: symbol, available: available)
+    private func appRow(id: String, title: String, subtitle: String, symbol: String, available: Bool = true,
+                        addToBastion: ((BastionApp) -> Void)? = nil) -> some View {
+        AppListRow(model: model, builds: model.builds, appearance: appearance, id: id, title: title, subtitle: subtitle, symbol: symbol, available: available, addToBastion: addToBastion)
     }
 
     private var header: some View {

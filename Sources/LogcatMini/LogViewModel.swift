@@ -63,8 +63,18 @@ final class LogInbox {
     var activeFindPane = FindPane.list
     private var findSubscription: AnyCancellable?
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) {
+    let mergeSettings: LogMergeSettings
+    @Published private(set) var rebuildingMergeRules = false
+    @Published private(set) var mergeRevision = 0
+    private var mergeSubscription: AnyCancellable?
+    private var mergeTask: Task<Void, Never>?
+    private var mergeWorker: Task<(LogBuffer, [LogEntry]), Never>?
+    private var mergeGeneration = UUID()
+    private var mergePending: [LogEntry] = []
+    init(defaults: UserDefaults = .standard, mergeSettings: LogMergeSettings? = nil) {
         self.defaults = defaults
+        self.mergeSettings = mergeSettings ?? .shared
+        buffer = LogBuffer(mergeRules: self.mergeSettings.rules)
         mirror = DeviceMirrorController(defaults: defaults)
         builds = LocalBuildController(defaults: defaults)
         filterHistory = FilterHistory(defaults: defaults)
@@ -79,6 +89,7 @@ final class LogInbox {
                 await self.refreshPackages()
             }
         }
+        builds.onSaved = { [weak self] package in self?.selectPackage(package) }
         builds.onInstalled = { [weak self] target, package in
             guard let self, self.selectedSerial == target.serial else { return }
             await self.refreshPackages()
@@ -91,6 +102,35 @@ final class LogInbox {
         findSubscription = listFind.$query.dropFirst().debounce(for: .milliseconds(120), scheduler: RunLoop.main).sink { [weak self] _ in
             self?.rebuildListFind()
         }
+        mergeSubscription = self.mergeSettings.$rules.dropFirst().sink { [weak self] rules in
+            self?.rebuildMergeRules(rules)
+        }
+    }
+    /// Rebuild off the main thread; keep incoming records and the frozen viewport intact.
+    func rebuildMergeRules(_ rules: [LogMergeRule]) {
+        mergeTask?.cancel(); mergeWorker?.cancel(); mergeGeneration = UUID()
+        let generation = mergeGeneration, snapshot = buffer, frozen = pausedSnapshot
+        mergePending = []; rebuildingMergeRules = true
+        let worker = Task.detached(priority: .userInitiated) {
+            var rebuilt = snapshot; rebuilt.setMergeRules(rules, shouldCancel: { Task.isCancelled })
+            var pausedBuffer = LogBuffer()
+            if !Task.isCancelled { pausedBuffer.append(frozen); pausedBuffer.setMergeRules(rules, shouldCancel: { Task.isCancelled }) }
+            return (rebuilt, pausedBuffer.entries)
+        }
+        mergeWorker = worker
+        mergeTask = Task { [weak self] in
+            let result = await worker.value
+            guard let self, !Task.isCancelled, self.mergeGeneration == generation else { return }
+            self.buffer = result.0; self.buffer.append(self.mergePending); self.mergePending = []
+            if self.paused { self.pausedSnapshot = result.1 }
+            self.rebuildingMergeRules = false; self.mergeTask = nil; self.mergeWorker = nil
+            self.totalCount = self.buffer.entries.count; self.evicted = self.buffer.evicted + self.pendingLoss
+            self.mergeRevision += 1; self.applyFilters()
+        }
+    }
+    private func cancelMergeRebuild() {
+        mergeGeneration = UUID(); mergeTask?.cancel(); mergeTask = nil; mergeWorker?.cancel(); mergeWorker = nil
+        mergePending = []; rebuildingMergeRules = false
     }
     var currentFind: LogFindState { inspectorFullscreen || (activeFindPane == .detail && selectedLog != nil) ? detailFind : listFind }
     func openFind(_ pane: FindPane? = nil) {
@@ -166,7 +206,7 @@ final class LogInbox {
     @Published var revision = 0
     @Published var selectedLog: LogEntry? {
         didSet {
-            if selectedLog?.id != oldValue?.id || selectedLog?.mergedParts != oldValue?.mergedParts {
+            if selectedLog?.id != oldValue?.id || selectedLog?.mergedParts != oldValue?.mergedParts || selectedLog?.message != oldValue?.message {
                 detailFormatted = false; canFormatDetail = false
             }
             if selectedLog == nil { inspectorFullscreen = false; activeFindPane = .list; detailFind.close() }
@@ -226,8 +266,9 @@ final class LogInbox {
 
     var device: AndroidDevice? { devices.first { $0.id == selectedSerial } }
     var package: AndroidPackage? { packages.first { $0.id == selectedPackage } }
+    var selectedPackageUnavailable: Bool { !selectedPackage.isEmpty && !loadingApps && device?.ready == true && package == nil }
     var matchingApps: [AndroidPackage] {
-        let matches = packages.filter { !favorites.contains($0.id) && (appSearch.isEmpty || $0.id.localizedCaseInsensitiveContains(appSearch)) }
+        let matches = packages.filter { !favorites.contains($0.id) && builds.project(for: $0.id) == nil && (appSearch.isEmpty || $0.id.localizedCaseInsensitiveContains(appSearch)) }
         guard let current = matches.first(where: { $0.id == selectedPackage }) else { return matches }
         return [current] + matches.filter { $0.id != current.id }
     }
@@ -235,6 +276,12 @@ final class LogInbox {
         favorites.packageIDs.filter {
             appSearch.isEmpty || $0.localizedCaseInsensitiveContains(appSearch) ||
             favoriteMetadata[$0]?.label.localizedCaseInsensitiveContains(appSearch) == true
+        }
+    }
+    var matchingLocalProjects: [LocalBuildProject] {
+        builds.projects.filter {
+            !favorites.contains($0.packageID) && (appSearch.isEmpty || $0.packageID.localizedCaseInsensitiveContains(appSearch) ||
+                $0.root.lastPathComponent.localizedCaseInsensitiveContains(appSearch))
         }
     }
     func toggleFavorite(_ packageID: String) {
@@ -262,7 +309,8 @@ final class LogInbox {
         }
         Task { await refreshDevices() }
     }
-    func shutdown() { mirror.stop(); rememberFilter(); filterTask?.cancel(); metadataTask?.cancel(); stream.stop(); timer?.invalidate(); pollTimer?.invalidate() }
+    func shutdown() {
+        cancelMergeRebuild(); mirror.stop(); rememberFilter(); filterTask?.cancel(); metadataTask?.cancel(); stream.stop(); timer?.invalidate(); pollTimer?.invalidate() }
 
     private func refreshFavoriteMetadata(readDevice: Bool = true) {
         metadataTask?.cancel()
@@ -362,9 +410,10 @@ final class LogInbox {
     }
 
     private func restoreSession() {
+        cancelMergeRebuild()
         let saved = appSessions.removeValue(forKey: sessionKey)
         filterTask?.cancel(); restoringSession = true
-        buffer = saved?.buffer ?? LogBuffer(); errorCount = saved?.errors ?? 0; pendingLoss = saved?.pendingLoss ?? 0
+        buffer = saved?.buffer ?? LogBuffer(mergeRules: mergeSettings.rules); errorCount = saved?.errors ?? 0; pendingLoss = saved?.pendingLoss ?? 0
         let filter = saved?.filter ?? SavedLogFilter(query: "", tag: "", regex: false, minimum: 0)
         query = filter.query; tag = filter.tag; regex = filter.regex; minimum = LogLevel.allCases[filter.minimum]
         paused = false; pausedSnapshot = []; receivedWhilePaused = 0; follow = saved?.follow ?? true
@@ -372,6 +421,7 @@ final class LogInbox {
         selectedLog = saved?.selectedLog; errorMessage = nil
         listFind.close(); detailFind.close(); restoringSession = false; applyFilters()
         defaults.set(selectedPackage, forKey: "selectedPackage")
+        if buffer.mergeRules != mergeSettings.rules { rebuildMergeRules(mergeSettings.rules) }
     }
 
     /// Sessions are scoped to both the device and the selected application (including all apps).
@@ -438,6 +488,7 @@ final class LogInbox {
         paused.toggle()
         if paused { pausedSnapshot = buffer.entries }
         else { pausedSnapshot = []; receivedWhilePaused = 0; applyFilters() }
+        if rebuildingMergeRules { rebuildMergeRules(mergeSettings.rules) }
     }
     var isFollowing: Bool { follow && !paused }
     func toggleFollow() {
@@ -445,6 +496,7 @@ final class LogInbox {
         else { follow.toggle() }
     }
     func clear() {
+        cancelMergeRebuild(); buffer = LogBuffer(mergeRules: mergeSettings.rules)
         _ = inbox.drain(); buffer.clear(); visible = []; pausedSnapshot = []; selectedLog = nil
         totalCount = 0; errorCount = 0; evicted = 0; pendingLoss = 0; receivedWhilePaused = 0; revision += 1; rebuildListFind()
     }
@@ -453,6 +505,7 @@ final class LogInbox {
         ingest(batch, lost: lost)
     }
     func ingest(_ batch: [LogEntry], lost: Int = 0) {
+        if rebuildingMergeRules { mergePending.append(contentsOf: batch) }
         let changedFrom = buffer.append(batch)
         pendingLoss += lost; totalCount = buffer.entries.count; evicted = buffer.evicted + pendingLoss
         errorCount += batch.reduce(0) { $0 + ($1.level.rank >= LogLevel.error.rank ? 1 : 0) }
